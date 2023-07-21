@@ -1,0 +1,12 @@
+# ide folders
+.idea/
+.vscode/
+
+# not project files
+__pycache__
+db
+
+.DS_Store
+.env
+.ruff_cache
+google.json

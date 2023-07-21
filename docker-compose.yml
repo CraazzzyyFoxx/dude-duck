@@ -1,0 +1,18 @@
+version: "3.5"
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      - BOT_WEBHOOK_URL=${BOT_WEBHOOK_URL:?err}
+      - BOT_HOST=${BOT_HOST:?err}
+      - BOT_PORT=${BOT_PORT:?err}
+      - BOT_BOOSTER_CHAT=${BOT_BOOSTER_CHAT:?err}
+      - BOT_ADMIN_CHAT=${BOT_ADMIN_CHAT:?err}
+      - BOT_API_TOKEN=${BOT_API_TOKEN:?err}
+    volumes:
+       - ./db:/db
+       - .logs:/logs
+    ports:
+      - "${BOT_PORT:-80:88}:88"
