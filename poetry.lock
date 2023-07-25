@@ -40,14 +40,15 @@ description = "Modern and fully asynchronous framework for Telegram Bot API"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "dev-3.x.zip", hash = "sha256:428c4b7ce255ba9f9bc90877b2a1f3163f4c291535317613321cc63bf51f0222"},
+    {file = "aiogram-3.0.0b8-py3-none-any.whl", hash = "sha256:453bc0d1f49a9fcb9beb58d257e244b0bac5ee9bfe7201626bb71b291f9d00df"},
+    {file = "aiogram-3.0.0b8.tar.gz", hash = "sha256:665928653622d86d2bb4cce84f63d7c47e63e162bfc138b1f7bed0df0ffc496a"},
 ]
 
 [package.dependencies]
 aiofiles = ">=23.1.0,<23.2.0"
 aiohttp = ">=3.8.4,<3.9.0"
 certifi = ">=2023.5.7"
-magic-filter = ">=1.0.9,<1.1.0"
+magic-filter = ">=1.0.10,<1.1.0"
 pydantic = ">=2.0.0,<2.1.0"
 
 [package.extras]
@@ -58,10 +59,6 @@ i18n = ["babel (>=2.12.1,<2.13.0)"]
 proxy = ["aiohttp-socks (>=0.8.0,<0.9.0)"]
 redis = ["redis (>=4.5.4,<4.6.0)"]
 test = ["aresponses (>=2.1.6,<2.2.0)", "pytest (>=7.4.0,<7.5.0)", "pytest-aiohttp (>=1.0.4,<1.1.0)", "pytest-asyncio (>=0.21.0,<0.22.0)", "pytest-cov (>=4.0.0,<4.1.0)", "pytest-html (>=3.2.0,<3.3.0)", "pytest-lazy-fixture (>=0.6.3,<0.7.0)", "pytest-mock (>=3.10.0,<3.11.0)", "pytest-mypy (>=0.10.0,<0.11.0)", "pytz (>=2022.7.1,<2022.8.0)"]
-
-[package.source]
-type = "url"
-url = "https://github.com/aiogram/aiogram/archive/refs/heads/dev-3.x.zip"
 
 [[package]]
 name = "aiohttp"
@@ -1673,4 +1670,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "6d469b438603772f80b68189d28dec878b8b6cede1656f9e80bfd3bd52822857"
+content-hash = "bfb2921dedfcbf34c6007c6054b113e3e80b84667e2fc39558f0103e7977f6e2"
