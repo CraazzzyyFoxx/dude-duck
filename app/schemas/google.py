@@ -99,7 +99,7 @@ class OrderSheetUpdate(BaseModel):
     script_share: str | None = None
     script_request: str | None = None
     booster: str | None = None
-    auth_date: str | None = None
+    auth_date: datetime.datetime | None = None
     status: str | None = None
     screenshot: AnyHttpUrl | None = None
     end_date: datetime.datetime | None = None

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from aiogram import types, exceptions
 from aiogram.types import InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardMarkup
@@ -209,7 +211,9 @@ class PullService:
     async def pull_booster_resp_yes(cls, order: OrderID, booster: BoosterID, resp: OrderRespondModel):
         model = await OrderCRUD.get(order.id)
         await OrderCRUD.update(db_obj=model, obj_in=order)
-        data = OrderSheetUpdate(booster=booster.name)
+        now = datetime.utcnow()
+        now = datetime(year=now.year, month=now.month, day=now.day)
+        data = OrderSheetUpdate(booster=booster.name, auth_date=now)
         x = await GoogleSheetsServiceManager.get().update_order("M+", 0, order.order_id, data)
         await OrderCRUD.update(db_obj=model, obj_in=x)
 
