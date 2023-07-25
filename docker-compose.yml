@@ -16,4 +16,4 @@ services:
        - ./db:/db
        - .logs:/logs
     ports:
-      - "${BOT_PORT:-80:88}:88"
+      - "${BOT_PORT:-80:88}:${BOT_PORT}"
