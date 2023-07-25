@@ -4,6 +4,8 @@ from .crud_order_channel import OrderChannelCRUD
 from .crud_order_message import OrderMessageCRUD
 from .crud_order_respond import OrderRespondCRUD
 from .crud_order_render import OrderRenderCRUD
+from .crud_booster import BoosterCRUD
+from .admin import AdminCRUD
 # For a new basic set of CRUD operations you could just do
 
 # from .base import CRUDBase

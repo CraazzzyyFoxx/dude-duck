@@ -92,7 +92,7 @@ class TimeService:
             timezone = "UTC"
 
             time_parsed = dateparser.parse(
-                time_str, settings={"RETURN_AS_TIMEZONE_AWARE": True, "TIMEZONE": timezone, "NORMALIZE": True}
+                time_str, settings={"TIMEZONE": timezone}
             )
 
             if not time_parsed:

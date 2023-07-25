@@ -9,8 +9,8 @@ __all__ = ("OrderMessageBase",
 
 
 class OrderMessageMeta(BaseModel):
-    order_id: int | None
-    channel_id: int | None
+    order_id: int | None = None
+    channel_id: int | None = None
 
 
 class OrderMessageBase(OrderMessageMeta):
@@ -20,15 +20,14 @@ class OrderMessageBase(OrderMessageMeta):
 
 class OrderMessage(OrderMessageBase):
     order_id: int
-    channel_id: int
     message_id: int
 
 
-class OrderMessageCreate(OrderMessageBase):
+class OrderMessageCreate(OrderMessageMeta):
     config_names: list[str]
 
 
-class OrderMessageUpdate(OrderMessageBase):
+class OrderMessageUpdate(OrderMessageMeta):
     config_names: list[str]
 
 

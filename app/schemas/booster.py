@@ -1,38 +1,45 @@
-from pydantic import BaseModel, UrlConstraints, AnyHttpUrl, ConfigDict
-
-from app.utils import TelegramUserUrl
-
+from pydantic import BaseModel, ConfigDict, Field, EmailStr
+from pydantic_extra_types.phone_numbers import PhoneNumber
+from pydantic_extra_types.payment import PaymentCardNumber
 
 __all__ = ("BoosterBase",
            "Booster",
            "BoosterCreate",
            "BoosterUpdate",
-           "BoosterID")
+           "BoosterID",
+           )
 
 
 class BoosterBase(BaseModel):
-    user_id: int | None
-    username: str | None
-    tg_link: TelegramUserUrl | None
-    verified: bool | None
-    payment: str | None
-    bank: str | None
+    user_id: int | None = None
+    username: str | None = None
+    verified: bool = Field(default=True)
+    strict: bool = Field(default=False)
+    max_count_orders: int = Field(default=100)
+
+    name: str | None = None
+    rub: int | None = None
+    binance: EmailStr | None = None
+    gold: str | None = None
+    description: str | None = None
+    discord: str | None = None
 
 
 class Booster(BoosterBase):
-    user_id: int
+    name: str
+    description: str
     username: str
-    tg_link: TelegramUserUrl
-    verified: bool
-    payment: str
-    bank: str
+    rub: PhoneNumber | PaymentCardNumber | None = None
+    binance: EmailStr | None = None
+    gold: str | None = None
+    discord: str | None = None
 
 
 class BoosterCreate(Booster):
-    pass
+    user_id: int
 
 
-class BoosterUpdate(Booster):
+class BoosterUpdate(BoosterBase):
     pass
 
 

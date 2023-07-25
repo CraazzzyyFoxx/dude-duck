@@ -1,24 +1,39 @@
+import json
 import typing
 import datetime
 
-import gspread_asyncio
-
+from loguru import logger
+from fastapi.encoders import jsonable_encoder
+from gspread_asyncio import AsyncioGspreadClientManager
 from google.oauth2.service_account import Credentials
 from gspread.utils import ValueRenderOption, DateTimeOption
-from loguru import logger
-from pydantic import create_model, SecretStr, AnyHttpUrl, EmailStr, field_validator
+from pydantic import create_model, SecretStr, EmailStr, field_validator, BaseModel, HttpUrl
+from pydantic_extra_types.payment import PaymentCardNumber
+from pydantic_extra_types.phone_numbers import PhoneNumber
+
+from app.schemas import OrderSheetUpdate, Order, Booster, AdminID
+from app.crud import OrderSheetsCRUD, AdminCRUD
+from app.services.time import TimeService, ConversionMode
 
 import config
 
-from app.schemas import OrderSheetUpdate, Order, OrderMeta, OrderBase
-from app.crud import OrderSheetsCRUD, OrderCRUD
-from app.services.time import TimeService, ConversionMode
+__all__ = ("GoogleSheetsService", "GoogleSheetsServiceManager")
 
-__all__ = ("GoogleSheetsService",)
+BM = typing.TypeVar("BM", bound=BaseModel)
+type_map = {"int": int,
+            'str': str,
+            'float': float,
+            'timedelta': datetime.timedelta,
+            'datetime': datetime.datetime,
+            'SecretStr': SecretStr,
+            'EmailStr': EmailStr,
+            'HttpUrl': HttpUrl,
+            'PhoneNumber': PhoneNumber,
+            'PaymentCardNumber': PaymentCardNumber}
 
 
 def enum_parse(field, extra):
-    def decorator(v: str, config):
+    def decorator(v: str, ):
         if v not in extra:
             raise ValueError(f"The {field} must be [{' | '.join(extra)}]")
         return v
@@ -26,169 +41,299 @@ def enum_parse(field, extra):
     return decorator
 
 
-def parse_datetime(v: str, config) -> typing.Any:
+def parse_datetime(v: str) -> typing.Any:
     return TimeService.convert_time(v, conversion_mode=ConversionMode.ABSOLUTE)
 
 
-def parse_timedelta(v: str, config) -> typing.Any:
+def parse_timedelta(v: str) -> typing.Any:
     now = datetime.datetime.utcnow()
     time = TimeService.convert_time(v, now=now, conversion_mode=ConversionMode.RELATIVE)
     return time - now
 
 
-def get_creds():
-    creds = Credentials.from_service_account_file(config.GOOGLE_CONFIG_FILE)
-    scoped = creds.with_scopes([
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ])
-    return scoped
+class GoogleSheetsServiceManagerMeta:
+    def __init__(self):
+        self.managers: dict[int, GoogleSheetsService] = {}
+        with open(config.GOOGLE_CONFIG_FILE) as file:
+            self.creds = json.loads(file.read())
+
+    async def init(self):
+        self.managers[0] = GoogleSheetsService(AsyncioGspreadClientManager(self.get_creds()))
+
+        admins = await AdminCRUD.get_multi()
+        for admin in admins:
+            admin = AdminID.model_validate(admin, from_attributes=True)
+            self.managers[admin.google.client_id] = GoogleSheetsService(AsyncioGspreadClientManager
+                                                                        (self.get_creds(admin=admin)))
+        logger.info("GoogleSheetsServiceManager... Ready!")
+
+    async def admin_create(self, admin: AdminID):
+        admin = AdminID.model_validate(admin, from_attributes=True)
+        self.managers[admin.google.client_id] = GoogleSheetsService(
+            AsyncioGspreadClientManager(self.get_creds(admin=admin)))
+
+    async def admin_delete(self, admin: AdminID):
+        del self.managers[admin.google.client_id]
+
+    async def admin_update(self, admin: AdminID):
+        admin = AdminID.model_validate(admin, from_attributes=True)
+        self.managers[admin.google.client_id] = GoogleSheetsService(
+            AsyncioGspreadClientManager(self.get_creds(admin=admin)))
+
+    def get_creds(self, *, admin: AdminID = None):
+        def wrapped():
+            if admin:
+                data = admin.google.model_dump()
+            else:
+                data = self.creds
+            creds = Credentials.from_service_account_info(data)
+            scoped = creds.with_scopes([
+                "https://spreadsheets.google.com/feeds",
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive",
+            ])
+            return scoped
+
+        return wrapped
+
+    def get(self, *, admin: AdminID = None):
+        if admin:
+            return self.managers[admin.google.client_id]
+        else:
+            return self.managers[0]
 
 
 class GoogleSheetsService:
-    agcm = gspread_asyncio.AsyncioGspreadClientManager(get_creds)
 
-    @classmethod
-    def n2a(cls, n: int):
+    def __init__(self, manager: AsyncioGspreadClientManager):
+        self.manager = manager
+
+    def n2a(self, n: int):
         d, m = divmod(n, 26)  # 26 is the number of ASCII letters
-        return '' if n < 0 else cls.n2a(d - 1) + chr(m + 65)  # chr(65) = 'A'
+        return '' if n < 0 else self.n2a(d - 1) + chr(m + 65)  # chr(65) = 'A'
 
-    @classmethod
-    def get_type(cls, type_name: str):
-        if type_name == 'int':
-            return int
-        elif type_name == 'str':
-            return str
-        elif type_name == 'float':
-            return float
-        elif type_name == 'dict':
-            return dict
-        elif type_name == 'timedelta':
-            return datetime.timedelta
-        elif type_name == 'datetime':
-            return datetime.datetime
-        elif type_name == 'SecretStr':
-            return SecretStr
-        elif type_name == 'EmailStr':
-            return EmailStr
-        elif type_name == 'AnyHttpUrl':
-            return AnyHttpUrl
-        elif type_name.startswith('list'):
-            name = type_name.replace("list[", "")
-            name = name.replace("]", "")
-            return list[cls.get_type(name)]
-        elif '|' in type_name:
+    def get_type(self, type_name: str, null: bool):
+        if '|' in type_name:
             names = type_name.split('|')
-            return typing.Union[cls.get_type(names[0].strip()), cls.get_type(names[1].strip())]
+            return self.get_type(names[0].strip(), False) | self.get_type(names[1].strip(), null)
 
-    @classmethod
-    async def parse_row(cls, spreadsheet: str, sheet_id: int, row: list[typing.Any]) -> Order:
-        model = await OrderSheetsCRUD.get_by_spreadsheet(spreadsheet, sheet_id)
+        if null:
+            return type_map[type_name] | None
+        return type_map[type_name]
 
-        if not model:
-            raise ValueError(f"No data for parser [spreadsheet={spreadsheet} sheet_id={sheet_id}]")
+    @staticmethod
+    async def get_parser(spreadsheet: str, sheet_id: int):
+        if parser := await OrderSheetsCRUD.get_by_spreadsheet(spreadsheet, sheet_id):
+            return parser
+        raise ValueError(f"No data for parser [spreadsheet={spreadsheet} sheet_id={sheet_id}]")
 
-        model_fields = []
-        meta_model_fields = []
+    async def parse_row(
+            self,
+            model: typing.Type[BaseModel],
+            spreadsheet: str,
+            sheet_id: int,
+            row: list[typing.Any],
+            apply_model: bool
+    ) -> BM:
+        parser = await self.get_parser(spreadsheet, sheet_id)
+        for i in range(len(parser.extra.items) - len(row)):
+            row.append(None)
+
         _fields = {}
         _validators = {}
         data_for_valid = {}
-        data = dict(info={})
+        for getter in parser.extra.items:
+            value = row[getter.row]
+            if value in ["", " "]:
+                value = None
+            data_for_valid[getter.name] = value
+            _fields[getter.name] = (self.get_type(getter.type, getter.null), None if getter.null else ...)
+            if value:
+                if getter.valid_values:
+                    _validators[f"{getter.name}_parse"] = (field_validator(getter.name, mode="before")
+                                                           (enum_parse(getter.name, getter.valid_values)))
+                if getter.type == "datetime":
+                    _validators[f"{getter.name}_parse"] = (field_validator(getter.name, mode="before")
+                                                           (parse_datetime))
+                if getter.type == "timedelta":
+                    _validators[f"{getter.name}_parse"] = (field_validator(getter.name, mode="before")
+                                                           (parse_timedelta))
 
-        for field in Order.model_fields.items():
-            model_fields.append(field[0])
+        check_model = create_model("check_model", **_fields, __validators__=_validators)  # type: ignore
+        valid_model = check_model.model_validate(data_for_valid, strict=False)
+        if apply_model:
+            validated_data = valid_model.model_dump()
+            model_fields = [field[0] for field in model.model_fields.items()]
+            data = dict(info={})
 
-        for field in OrderMeta.model_fields.items():
-            meta_model_fields.append(field[0])
+            for getter in parser.extra.items:
+                if getter.name in model_fields:
+                    data[getter.name] = validated_data[getter.name]
+                else:
+                    data["info"][getter.name] = validated_data[getter.name]
 
-        for getter in model.extra.items:
-            field_type = cls.get_type(getter.type)
-            field_data = row[getter.row]
-            if getter.name not in meta_model_fields:
-                _fields[getter.name] = (field_type, None if getter.null else ...)
+            return model(**data)
+        else:
+            return valid_model
 
-            # if getter.type == "str":
-            #     if isinstance(field_data, int):
-            #         field_data = str(field_data)
-
-            data_for_valid[getter.name] = field_data
-
-            if getter.valid_values:
-                _validators[f"{getter.name}_parse"] = (field_validator(getter.name, mode="before")
-                                                       (enum_parse(getter.name, getter.valid_values)))
-            if getter.type == "datetime":
-                _validators[f"{getter.name}_parse"] = field_validator(getter.name, mode="before")(parse_datetime)
-            if getter.type == "timedelta":
-                _validators[f"{getter.name}_parse"] = field_validator(getter.name, mode="before")(parse_timedelta)
-
-        Check = create_model("Check", **_fields, __base__=OrderBase, __validators__=_validators)  # type: ignore
-        _ = Check.model_validate(data_for_valid, strict=False)
-
-        for getter in model.extra.items:
-            if getter.name in model_fields:
-                data[getter.name] = row[getter.row]
-            else:
-                data["info"][getter.name] = row[getter.row]
-
-        return Order(**data)
-
-    @classmethod
-    async def order_to_row(cls, spreadsheet: str, sheet_id: int, data: OrderSheetUpdate) -> dict[int, typing.Any]:
-        model = await OrderSheetsCRUD.get_by_spreadsheet(spreadsheet, sheet_id)
-
-        if not model:
-            raise ValueError(f"No data for parser [spreadsheet={spreadsheet} sheet_id={sheet_id}]")
-
-        order = await OrderCRUD.get_by_game(data.order_id, data.game)
-        if not order:
-            raise ValueError(f"Order not found [order_id={data.order_id} game={data.game}]")
-
-        to_dict = data.model_dump()
+    async def data_to_row(
+            self,
+            spreadsheet: str,
+            sheet_id: int,
+            data: BaseModel
+    ) -> dict[int, typing.Any]:
+        parser = await self.get_parser(spreadsheet, sheet_id)
+        to_dict: dict = jsonable_encoder(data)
         row = {}
-        model_fields = []
 
-        for field in OrderMeta.model_fields.items():
-            model_fields.append(field[0])
+        if info := to_dict.get("info"):
+            for name, value in info.items():
+                to_dict[name] = value
 
-        for getter in model.extra.items:
-            if getter.name not in model_fields and to_dict[getter.name] is not None:
+        for getter in parser.extra.items:
+            if to_dict.get(getter.name) is not None and not getter.generated:
                 row[getter.row] = to_dict[getter.name]
-
         return row
 
-    @classmethod
-    async def get_order(cls, spreadsheet: str, sheet_id: int, order_id: int) -> Order:
-        agc = await cls.agcm.authorize()
+    async def get_row_data(
+            self,
+            model: typing.Type[BaseModel],
+            spreadsheet: str,
+            sheet_id: int,
+            row_id: int,
+            apply_model: bool
+    ):
+        agc = await self.manager.authorize()
         sh = await agc.open(spreadsheet)
         sheet = await sh.get_worksheet_by_id(sheet_id)
+        parser = await self.get_parser(spreadsheet, sheet_id)
+        columns = max(p.row for p in parser.extra.items)
+        start = min(p.row for p in parser.extra.items)
 
-        row = await sheet.row_values(order_id, value_render_option=ValueRenderOption.unformatted,
-                                     date_time_render_option=DateTimeOption.formatted_string)
-        return await cls.parse_row(spreadsheet, sheet_id, row)
+        row = await sheet.get(range_name=f"{self.n2a(start)}{row_id}:{self.n2a(columns)}{row_id}",
+                              value_render_option=ValueRenderOption.unformatted,
+                              date_time_render_option=DateTimeOption.formatted_string)
+        return await self.parse_row(model, spreadsheet, sheet_id, row[0], apply_model)
 
-    @classmethod
-    async def get_all_orders(cls, spreadsheet: str, sheet_id: int) -> list[Order]:
-        agc = await cls.agcm.authorize()
+    async def get_all_data(
+            self,
+            model: typing.Type[BaseModel],
+            spreadsheet: str,
+            sheet_id: int,
+            apply_model: bool
+    ):
+        agc = await self.manager.authorize()
         sh = await agc.open(spreadsheet)
         sheet = await sh.get_worksheet_by_id(sheet_id)
+        values_list = await sheet.col_values(2, value_render_option=ValueRenderOption.unformatted)
+        parser = await self.get_parser(spreadsheet, sheet_id)
+        columns = max(p.row for p in parser.extra.items)
+        start = min(p.row for p in parser.extra.items)
+        index = 1
 
-        rows = await sheet.get_values(value_render_option=ValueRenderOption.unformatted,
-                                      date_time_render_option=DateTimeOption.formatted_string)
-        return [await cls.parse_row(spreadsheet, sheet_id, row) for row in rows]
+        for value in values_list:
+            if not value:
+                break
+            index += 1
 
-    @classmethod
-    async def update_order(cls, spreadsheet: str, sheet_id: int, order: OrderSheetUpdate) -> Order:
-        agc = await cls.agcm.authorize()
+        rows = await sheet.get(range_name=f"{self.n2a(start)}1:{self.n2a(columns)}{index}",
+                               value_render_option=ValueRenderOption.unformatted,
+                               date_time_render_option=DateTimeOption.formatted_string)
+        return [await self.parse_row(model, spreadsheet, sheet_id, row, apply_model) for row in rows]
+
+    async def create_row_data(
+            self,
+            model: typing.Type[BaseModel],
+            spreadsheet: str,
+            sheet_id: int,
+            data: BaseModel,
+            apply_model: bool
+    ) -> BM:
+        agc = await self.manager.authorize()
         sh = await agc.open(spreadsheet)
         sheet = await sh.get_worksheet_by_id(sheet_id)
-        row = await cls.order_to_row(spreadsheet, sheet_id, order)
+        values_list = await sheet.col_values(2, value_render_option=ValueRenderOption.unformatted)
+        index = 1
 
-        await sheet.batch_update([
-            {
-                "range": f"{cls.n2a(col)}{order.order_id}",
-                "values": [[value]]
-            }
-            for col, value in row.items()])
+        for value in values_list:
+            if not value:
+                break
+            index += 1
 
-        return await cls.get_order(spreadsheet, sheet_id, order.order_id)
+        return await self.update_row_data(model, spreadsheet, sheet_id, index, data, apply_model)
+
+    async def update_row_data(
+            self,
+            model: typing.Type[BaseModel],
+            spreadsheet: str,
+            sheet_id: int,
+            row_id: int,
+            data: BaseModel,
+            apply_model: bool
+    ) -> BM:
+        agc = await self.manager.authorize()
+        sh = await agc.open(spreadsheet)
+        sheet = await sh.get_worksheet_by_id(sheet_id)
+        row = await self.data_to_row(spreadsheet, sheet_id, data)
+        await sheet.batch_update(
+            [{"range": f"{self.n2a(col)}{row_id}", "values": [[value]]} for col, value in row.items()],
+            response_value_render_option=ValueRenderOption.formatted,
+            response_date_time_render_option=DateTimeOption.formatted_string
+        )
+
+        return await self.get_row_data(model, spreadsheet, sheet_id, row_id, apply_model)
+
+    async def get_order(self, spreadsheet: str, sheet_id: int, row_id: int, *, apply_model=True) -> Order:
+        return await self.get_row_data(Order, spreadsheet, sheet_id, row_id, apply_model=apply_model)
+
+    async def get_orders(self, spreadsheet: str, sheet_id: int, *, apply_model=True) -> list[Order]:
+        return await self.get_all_data(Order, spreadsheet, sheet_id, apply_model=apply_model)
+
+    async def create_order(self, spreadsheet: str, sheet_id: int, data: Order, *, apply_model=True) -> Order:
+        return await self.create_row_data(Order, spreadsheet, sheet_id, data, apply_model)
+
+    async def update_order(
+            self,
+            spreadsheet: str,
+            sheet_id: int,
+            row_id: int,
+            data: OrderSheetUpdate,
+            *,
+            apply_model=True
+    ) -> Order:
+        return await self.update_row_data(Order, spreadsheet, sheet_id, row_id, data, apply_model)
+
+    async def get_booster(self, spreadsheet: str, sheet_id: int, row_id: int, *, apply_model=True) -> Booster:
+        return await self.get_row_data(Booster, spreadsheet, sheet_id, row_id, apply_model=apply_model)
+
+    async def get_booster_by_cell(
+            self,
+            spreadsheet: str,
+            sheet_id: int,
+            value: str,
+            *,
+            apply_model=True
+    ) -> Booster | None:
+        agc = await self.manager.authorize()
+        sh = await agc.open(spreadsheet)
+        sheet = await sh.get_worksheet_by_id(sheet_id)
+        cell_list = await sheet.findall(value)
+        if cell_list:
+            return await self.get_row_data(Booster, spreadsheet, sheet_id, cell_list[0].row, apply_model=apply_model)
+
+    async def get_boosters(self, spreadsheet: str, sheet_id: int, *, apply_model=True) -> list[Booster]:
+        return await self.get_all_data(Booster, spreadsheet, sheet_id, apply_model=apply_model)
+
+    async def update_booster(
+            self,
+            spreadsheet: str,
+            sheet_id: int,
+            row_id: int,
+            data: OrderSheetUpdate,
+            *,
+            apply_model=True
+    ) -> Booster:
+        return await self.update_row_data(Booster, spreadsheet, sheet_id, row_id, data, apply_model)
+
+
+GoogleSheetsServiceManager = GoogleSheetsServiceManagerMeta()

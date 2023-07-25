@@ -8,9 +8,9 @@ __all__ = ("OrderChannelBase",
 
 
 class OrderChannelBase(BaseModel):
-    game: str | None
+    game: str | None = None
     category: str | None = Field(default=None, min_length=1)
-    channel_id: int | None
+    channel_id: int | None = None
 
 
 class OrderChannel(OrderChannelBase):

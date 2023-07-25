@@ -45,11 +45,14 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             update_data = obj_in
         else:
             update_data = obj_in.model_dump(exclude_unset=True)
+
         for field in obj_data:
             if field in update_data:
-                setattr(db_obj, field, update_data[field])
+                obj_data[field] = update_data[field]
+
+        db_obj = db_obj.update_from_dict(obj_data)
         await db_obj.save()
-        return db_obj
+        return await self.get(db_obj.id)
 
     async def remove(self, *, id: int) -> ModelType:
         obj = await self.model.filter(id=id).first()

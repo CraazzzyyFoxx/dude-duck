@@ -8,18 +8,20 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.11"
 uvicorn = "^0.23.0"
-pydantic = "^2.0.3"
+pydantic = {extras = ["email"], version = "^2.0.3"}
 python-dotenv = "^1.0.0"
 tortoise-orm = "^0.19.3"
 dateparser = "^1.1.7"
 loguru = "^0.7.0"
 sentry-sdk = "^1.28.1"
-orjson = "^3.8.8"
 aerich = "^0.7.1"
 fastapi = "^0.100.0"
 uvloop = {version = "^0.17.0", platform="linux"}
 gspread-asyncio = "^1.9.0"
 aiogram = {url = "https://github.com/aiogram/aiogram/archive/refs/heads/dev-3.x.zip"}
+google-api-python-client = "^2.94.0"
+pydantic-extra-types = "^2.0.0"
+phonenumbers = "^8.13.17"
 
 
 

@@ -1,49 +1,6 @@
-from pathlib import Path
-
-from pydantic.v1 import BaseSettings
-
-
-class Config(BaseSettings):
-    TOKEN: str
-    WEBHOOK_URL: str
-    HOST: str
-    PORT: int
-
-    ADMIN_CHAT: int
-
-    API_TOKEN: str
-    SENTRY_DSN: str
-    DEBUG: bool
-
-    log_level: str = "info"
-    logs_root_path: str = f"{Path.cwd()}/logs"
-
-    class Config:
-        env_file = ".env"
-        env_prefix = "bot_"
-
+from app.config import Config, tortoise, GOOGLE_CONFIG_FILE
 
 app = Config()
-
-BASE_DIR = Path(__file__).resolve().parent
-SQLITE_DB_FILE = BASE_DIR / "db"
-SQLITE_DB_FILE.mkdir(exist_ok=True)
-SQLITE_DB_FILE = BASE_DIR / "db" / "db.sqlite3"
-GOOGLE_CONFIG_FILE = BASE_DIR / "google.json"
-
-
-tortoise = {
-    "connections": {
-        "default": f"sqlite://{SQLITE_DB_FILE}", },
-
-    "apps": {
-        "main": {
-            "models": ["app.db", "aerich.models"],
-            "default_connection": "default",
-        }
-    },
-}
-
 
 START_MESSAGE: str = """
 We glad to see you in our company. \n

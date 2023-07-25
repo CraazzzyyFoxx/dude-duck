@@ -1,83 +1,22 @@
 import datetime
 import typing
 
-from enum import IntEnum
-
 from pydantic import BaseModel, ConfigDict, AnyHttpUrl, field_validator, Field
 
-from app.schemas.order import OrderMeta
+__all__ = (
+    "OrderSheetUpdate",
+    "OrderSheetParseItem",
+    "OrderSheetParse",
+    "OrderSheetParseItemList",
+    "OrderSheetParseID",
+    "OrderSheetParseBase",
+    "OrderSheetParseCreate",
+    "OrderSheetParseUpdate",
+    "allowed_types"
+)
 
-
-__all__ = ("OrderStatusEnum",
-           "OrderStatusPaid",
-           "OrderTypeEnum",
-           "OrderSheetUpdate",
-           "OrderSheetParseItem",
-           "OrderSheetParse",
-           "OrderSheetParseItemList",
-           "OrderSheetParseID",
-           "OrderSheetParseBase",
-           "OrderSheetParseCreate",
-           "OrderSheetParseUpdate")
-
-
-class OrderStatusEnum(IntEnum):
-    InProgress = 0
-    Completed = 1
-    Refund = 2
-
-
-class OrderStatusPaid(IntEnum):
-    Paid = 1
-    NotPaid = 0
-
-
-class OrderTypeEnum(IntEnum):
-    Pilot = 0
-    Self = 1
-
-
-class OrderSheetUpdate(OrderMeta):
-    order_id: int
-
-    date: datetime.datetime | None = None
-    exchange: float | None = None
-    shop: str | None = None
-    shop_order_id: str | None = None
-    boost_type: str | None = None
-    region_fraction: str | None = None
-    server: str | None = None
-    character_class: str | None = None
-    nickname: str | None = None
-    armory: str | None = None
-    game: str
-    tg_channels: list[int] | None = None
-    category: str | None = None
-    purchase: str | None = None
-    comment: str | None = None
-    battle_tag: str | None = None
-    login: str | None = None
-    password: str | None = None
-    vpn: str | None = None
-    contact: str | None = None
-    script_payload: str | None = None
-    script_share: str | None = None
-    script_request: str | None = None
-    booster: str | None = None
-    auth_date: str | None = None
-    status: str | None = None
-    screenshot: AnyHttpUrl | None = None
-    end_date: datetime.datetime | None = None
-    price_dollar: float | None = None
-    eta: str | None = None
-    price_booster_rub: float | None = None
-    price_booster_dollar: float | None = None
-    price_booster_dollar_fee: float | None = None
-    costs_rub: float | None = None
-    costs_dollar: float | None = None
-    profit: float | None = None
-    percent: float | None = None
-    status_paid: str | None = None
+allowed_types = ["int", "str", "timedelta", "datetime", "SecretStr", "EmailStr", "HttpUrl", "float", 'PhoneNumber',
+                 'PaymentCardNumber']
 
 
 class OrderSheetParseItem(BaseModel):
@@ -85,16 +24,22 @@ class OrderSheetParseItem(BaseModel):
 
     name: str
     row: int
-    null: bool
+    null: bool = Field(default=False)
+    generated: bool = Field(default=False)
 
     valid_values: list[typing.Any] = Field(examples=[["Completed", "InProgress", "Refund"]])
-    type: str = Field(examples=["int", "str", "timedelta", "datetime", "SecretStr", "EmailStr", "AnyHttpUrl", "float"])
+    type: str = Field(examples=allowed_types)
 
-    # @field_validator("type")
-    # def validate_type(cls, v: str):
-    #     if v not in ["int", "str", "timedelta", "datetime", "SecretStr", "EmailStr", "AnyHttpUrl", "float"]:
-    #         raise ValueError(f"Type can be [int | str | timedelta | datetime | SecretStr | EmailStr | float]")
-    #     return v
+    @field_validator("type")
+    def validate_type(cls, v: str):
+        if '|' in v:
+            vs = v.split("|")
+        else:
+            vs = [v]
+        for x in vs:
+            if x.strip() not in allowed_types:
+                raise ValueError(f"Type can be [{' | '.join(allowed_types)}]")
+        return v
 
 
 class OrderSheetParseItemList(BaseModel):
@@ -127,3 +72,43 @@ class OrderSheetParseID(OrderSheetParse):
 
 class OrderSheetParseCreate(OrderSheetParse):
     pass
+
+
+class OrderSheetUpdate(BaseModel):
+    date: datetime.datetime | None = None
+    exchange: float | None = None
+    shop: str | None = None
+    shop_order_id: str | None = None
+    boost_type: str | None = None
+    region_fraction: str | None = None
+    server: str | None = None
+    character_class: str | None = None
+    nickname: str | None = None
+    armory: str | None = None
+    game: str | None = None
+    tg_channels: list[int] | None = None
+    category: str | None = None
+    purchase: str | None = None
+    comment: str | None = None
+    battle_tag: str | None = None
+    login: str | None = None
+    password: str | None = None
+    vpn: str | None = None
+    contact: str | None = None
+    script_payload: str | None = None
+    script_share: str | None = None
+    script_request: str | None = None
+    booster: str | None = None
+    auth_date: str | None = None
+    status: str | None = None
+    screenshot: AnyHttpUrl | None = None
+    end_date: datetime.datetime | None = None
+    price_dollar: float | None = None
+    eta: str | None = None
+    price_booster_rub: float | None = None
+    price_booster_dollar: float | None = None
+    price_booster_dollar_fee: float | None = None
+    costs_rub: float | None = None
+    costs_dollar: float | None = None
+    profit: float | None = None
+    percent: float | None = None

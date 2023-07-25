@@ -1,46 +1,49 @@
 import datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator, Field
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
-from app.services.time import TimeService, ConversionMode
 
 __all__ = (
     "Order",
-    "OrderTelegram",
     "OrderID",
     "OrderBase",
     "OrderCreate",
     "OrderUpdate",
-    "OrderMeta"
 )
 
 
-class OrderMeta(BaseModel):
-    order_id: int | None
-    game: str | None
+class OrderBase(BaseModel):
+    order_id: int | None = None
+    date: datetime.datetime | None = None
+    exchange: float | None = None
+    shop: str | None = None
+    shop_order_id: str | int | None = None
+    boost_type: str | None = None
+    region_fraction: str | None = None
+    server: str | None = None
+    character_class: str | None = None
+    nickname: str | None = None
+    game: str | None = None
+    purchase: str | None = None
+    comment: str | None = None
+    battle_tag: str | None = None
+    contact: str | None = None
+    booster: str | int | None = None
+    auth_date: datetime.datetime | None = None
+    status: str | None = None
+    screenshot: HttpUrl | None = None
+    end_date: datetime.datetime | None = None
 
+    price_dollar: float | None = None
+    price_booster_dollar: float | None = None
+    price_booster_dollar_fee: float
+    price_booster_rub: float | None = None
+    price_booster_gold: float | None = None
+    method_payment: str | None = None
+    profit: float | None = None
+    share: float | None = None
 
-class OrderBase(OrderMeta):
-    order_id: int | None
-    date: datetime.datetime | None
-    exchange: float | None
-    shop: str | None
-    game: str | None
-    category: str | None
-    purchase: str | None
-
-    price_dollar: float | None
-    price_booster_rub: float | None
-    price_booster_dollar: float | None
-    price_booster_dollar_fee: float | None
-
-    info: dict | None = Field(default={})
-
-    @field_validator('date', mode='before')
-    def parse_date(cls, v: str):
-        if isinstance(v, datetime.datetime):
-            return v
-        return TimeService.convert_time(v, conversion_mode=ConversionMode.ABSOLUTE)
+    info: dict = Field(default={})
 
 
 class Order(OrderBase):
@@ -48,34 +51,44 @@ class Order(OrderBase):
     date: datetime.datetime
     exchange: float
     shop: str
+    shop_order_id: str | int | None = None
+    boost_type: str
+    region_fraction: str
+    server: str | None = None
+    character_class: str | None = None
+    nickname: str | None = None
     game: str
-    category: str
     purchase: str
+    comment: str | None = None
+    battle_tag: str | None = None
+    contact: str | None = None
+    booster: str | int | None = None
+    auth_date: datetime.datetime | None = None
+    status: str
+    screenshot: HttpUrl | None = None
+    end_date: datetime.datetime | None = None
 
     price_dollar: float
-    price_booster_rub: float
     price_booster_dollar: float
     price_booster_dollar_fee: float
+    price_booster_rub: float
+    price_booster_gold: float
+    method_payment: str | None = None
+    profit: float
+    share: float
 
-    info: dict
-
-
-class OrderUpdate(OrderBase):
-    pass
-
-
-class OrderID(OrderBase):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
+    info: dict = Field(default={})
 
 
 class OrderCreate(Order):
     pass
 
 
-class OrderTelegram(BaseModel):
-    spreadsheet: str
-    sheet_id: int
-    game: str
-    row: int
+class OrderUpdate(OrderBase):
+    pass
+
+
+class OrderID(Order):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int

@@ -21,17 +21,17 @@ class OrderRespondExtra(BaseModel):
 
 
 class OrderRespondBase(BaseModel):
-    user_id: int | None
-    username: str | None
+    user_id: int | None = None
+    username: str | None = None
 
-    channel_id: int | None
-    message_id: int | None
-    message_id_admin: int | None = Field(default=None)
+    channel_id: int | None = None
+    message_id: int | None = None
+    message_id_admin: int | None = None
 
-    approved: bool | None
-    strict: bool | None
+    approved: bool | None = None
+    strict: bool | None = None
 
-    extra: OrderRespondExtra | None
+    extra: OrderRespondExtra | None = None
 
 
 class OrderRespond(BaseModel):

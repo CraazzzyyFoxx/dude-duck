@@ -2,9 +2,13 @@
 .idea/
 .vscode/
 
+!/app/db/
+
 # not project files
 __pycache__
-db
+.db/
+.data/
+.logs/
 
 .DS_Store
 .env
