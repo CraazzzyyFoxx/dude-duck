@@ -69,7 +69,7 @@ OrderRenderBase = {
           {
             "attr": "comment",
             "storage": [
-              "order", "info"
+              "order"
             ],
             "format": None,
             "before_value": None,
