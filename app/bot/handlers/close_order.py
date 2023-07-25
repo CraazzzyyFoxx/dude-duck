@@ -38,14 +38,14 @@ async def start(message: types.Message, command: CommandObject, bot: Bot):
 
     if not command.args:
         return await message.answer(format_error("The information should be of the type: \n"
-                                                 "<b>Order #300 - https://imgur.com/LTj5W8x - $</b>"),
+                                                 "<b>300 - https://imgur.com/LTj5W8x - $</b>"),
                                     disable_web_page_preview=True)
 
     args = command.args.split("-")
 
     if len(args) != 3:
         return await message.answer(format_error("The information should be of the type: \n"
-                                                 "<b>Order #300 - https://imgur.com/LTj5W8x - $</b>"),
+                                                 "<b>300 - https://imgur.com/LTj5W8x - $</b>"),
                                     disable_web_page_preview=True)
     try:
         data = Validation(order_id=args[0].strip(),

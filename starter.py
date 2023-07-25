@@ -38,7 +38,8 @@ setup_application(app, dp, _bot=bot, bot=bot)
 if not config.app.debug:
     sentry_sdk.init(
         dsn=config.app.sentry_dsn,
-        traces_sample_rate=1.0
+        traces_sample_rate=1.0,
+        profiles_sample_rate=1.0
     )
 
 register_tortoise(
@@ -91,5 +92,4 @@ if __name__ == '__main__':
         "starter:app",
         host=config.app.host,
         port=config.app.port,
-        # log_level="critical"
     )

@@ -36,7 +36,7 @@ class OrderBase(BaseModel):
 
     price_dollar: float | None = None
     price_booster_dollar: float | None = None
-    price_booster_dollar_fee: float
+    price_booster_dollar_fee: float | None = None
     price_booster_rub: float | None = None
     price_booster_gold: float | None = None
     method_payment: str | None = None

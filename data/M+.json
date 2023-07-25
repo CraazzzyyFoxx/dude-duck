@@ -222,7 +222,7 @@
         "name": "price_booster_dollar_fee",
         "row": 26,
         "null": false,
-        "generated": false,
+        "generated": true,
         "valid_values": [],
         "type": "float"
       },
