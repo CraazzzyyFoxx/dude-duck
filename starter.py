@@ -1,3 +1,4 @@
+import sentry_sdk
 import uvicorn
 
 from fastapi import FastAPI, Request
@@ -34,11 +35,12 @@ srh = SimpleRequestHandler(dp, bot, handle_in_background=False, _bot=bot)
 srh.register(app, "/api/telegram/webhook")
 setup_application(app, dp, _bot=bot, bot=bot)
 
-# # sentry_sdk.init(
-# #     dsn=config.app.SENTRY_DSN,
-# #     traces_sample_rate=1.0
-# # )
-#
+if not config.app.debug:
+    sentry_sdk.init(
+        dsn=config.app.SENTRY_DSN,
+        traces_sample_rate=1.0
+    )
+
 register_tortoise(
     app,
     config=config.tortoise,
