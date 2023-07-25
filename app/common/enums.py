@@ -12,4 +12,5 @@ class RouteTag(StrEnum):
     SHEETS_PARSERS = "📊 Google Sheets Parsers"
     TELEGRAM = "⛔️ Telegram Methods"
     SHEET = "🧲 Gather data from Google Sheets"
+    ORDER_RESPOND = "Order Booster Response"
     
