@@ -8,9 +8,10 @@ services:
       - BOT_WEBHOOK_URL=${BOT_WEBHOOK_URL:?err}
       - BOT_HOST=${BOT_HOST:?err}
       - BOT_PORT=${BOT_PORT:?err}
-      - BOT_BOOSTER_CHAT=${BOT_BOOSTER_CHAT:?err}
       - BOT_ADMIN_CHAT=${BOT_ADMIN_CHAT:?err}
-      - BOT_API_TOKEN=${BOT_API_TOKEN:?err}
+      - BOT_API_TOKEN_BOT=${BOT_API_TOKEN_BOT:?err}
+      - BOT_DEBUG=${BOT_DEBUG:?err}
+      - BOT_SENTRY_DSN=${BOT_SENTRY_DSN:?err}
     volumes:
        - ./db:/db
        - .logs:/logs
