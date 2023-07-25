@@ -14,7 +14,7 @@ __all__ = (
 
 
 class OrderRespondExtra(BaseModel):
-    text: str | None = Field(default="")
+    text: str | None = Field(default=None)
     price: float | None = Field(default=None)
     start_date: datetime.datetime | None = Field(default=None)
     eta: datetime.timedelta | None = Field(default=None)

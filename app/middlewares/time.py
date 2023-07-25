@@ -17,5 +17,5 @@ class TimeMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         process_time = time.time() - start_time
         response.headers["X-Process-Time"] = str(process_time)
-        logger.info(f"{request.url} process time: {process_time * 1000} ms")
+        logger.info(f"{request.url} process time: {int(process_time * 1000)} ms")
         return response

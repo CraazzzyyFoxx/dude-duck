@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from pydantic import ValidationError
 
-from app.schemas import OrderRespond, OrderID, RenderConfigID, Order
+from app.schemas import OrderRespond, RenderConfigID, Order
 
 __all__ = (
     "format_error",
@@ -39,7 +39,7 @@ class OrderRender:
                     for st in fof.storage:
                         d = d[st]
                     attr = d.get(fof.attr)
-                    if attr:
+                    if attr is not None:
                         if fof.format:
                             attr = f"{attr:{fof.format}}"
                         if fof.before_value:

@@ -11,13 +11,15 @@ from app.schemas import BoosterCreate
 router = Router()
 
 
-@router.message(Command('registr'))
+@router.message(Command('register'))
 async def start(message: types.Message, bot: Bot):
     message._bot = bot
     user = message.from_user
     booster = await BoosterCRUD.get_by_username(user.username)
     if booster:
-        await message.answer("You have already applied for registration")
+        return await message.answer("You have already applied for registration")
+
+    await message.answer("Fetching data... Please wait")
     try:
         booster_sheets = await GoogleSheetsServiceManager.get().get_booster_by_cell(spreadsheet="M+",
                                                                                     sheet_id=673034649,
@@ -26,7 +28,8 @@ async def start(message: types.Message, bot: Bot):
         return await message.answer(format_error(format_pydantic_error(e)))
 
     if booster_sheets is None:
-        await message.answer("I can't find your details, write to @dude_duck or @thespacerat for more info")
+        await message.answer("The reason for the error is lack of verification. "
+                             "Please send your Telegram tag and payment method to the manager at @Dudeduck or @thespacerat")
         return
 
     data = BoosterCreate(user_id=user.id,

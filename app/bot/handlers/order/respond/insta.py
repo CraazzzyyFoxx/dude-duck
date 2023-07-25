@@ -28,7 +28,7 @@ async def respond_order_button(call: types.CallbackQuery, callback_data: OrderRe
     booster = await BoosterCRUD.get_by_user_id(call.from_user.id)
     if not booster or not booster.verified:
         try:
-            msg = format_error("You can't pick orders because there is no verification or registration.")
+            msg = format_error("You have not been verified. Please send your Telegram tag and payment method to the manager at @Dudeduck or @thespacerat. Then message me /register")
             await bot.send_message(call.from_user.id, msg)
             await call.answer()
         except exceptions.TelegramAPIError:

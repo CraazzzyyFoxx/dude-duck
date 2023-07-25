@@ -37,8 +37,7 @@ async def sheets_create_order(order: SheetsOrder, admin: AdminID = Depends(AuthS
         model_pyd = await GoogleSheetsServiceManager.get(admin=admin).get_order(
             order.spreadsheet,
             order.sheet_id,
-            order.row,
-            apply_model=False
+            order.row
         )
         model = await OrderCRUD.create(obj_in=model_pyd)
         return model
