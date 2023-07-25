@@ -4,6 +4,7 @@ from aiogram import types, Router, Bot
 from aiogram.filters import Command, CommandObject
 from pydantic import BaseModel, HttpUrl, field_validator, ValidationError, Field
 
+import config
 from app.common.formats import format_error, format_pydantic_error
 from app.services.google import GoogleSheetsServiceManager
 from app.crud import BoosterCRUD, OrderCRUD
@@ -68,5 +69,7 @@ async def start(message: types.Message, command: CommandObject, bot: Bot):
     d = OrderBase(screenshot=data.url, method_payment=data.payment, status="Completed", end_date=now)
     await GoogleSheetsServiceManager.get().update_order("M+", 0, data.order_id, d)
     await OrderCRUD.update(db_obj=model, obj_in=d)
+
+    await bot.send_message(config.app.admin_chat, f"@dudeduck @thespacerat Order#{model.order_id}  was closed! please check screenshot")
 
     return await message.answer("Order successfully closed")
