@@ -64,7 +64,7 @@ async def start(message: types.Message, command: CommandObject, bot: Bot):
         return await message.answer(format_error("The order is already closed"))
     now = datetime.utcnow()
     now = datetime(year=now.year, month=now.month, day=now.day)
-
+    await message.answer("Processing... Please wait")
     d = OrderBase(screenshot=data.url, method_payment=data.payment, status="Completed", end_date=now)
     await GoogleSheetsServiceManager.get().update_order("M+", 0, data.order_id, d)
     await OrderCRUD.update(db_obj=model, obj_in=d)
