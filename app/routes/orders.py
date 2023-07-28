@@ -6,12 +6,10 @@ from starlette import status
 from app.common.enums import RouteTag
 from app.schemas import OrderID, OrderCreate, OrderUpdate
 from app.services.auth import AuthService
-from app.crud import OrderCRUD
 
 router = APIRouter(
     prefix='/order',
     tags=[RouteTag.ORDERS],
-    dependencies=[Depends(AuthService.requires_authorization_admin)]
 )
 
 
@@ -31,15 +29,15 @@ async def read_order(order_id: int):
     return model
 
 
-@router.post('/', status_code=status.HTTP_200_OK)
-async def create_order(order: OrderCreate):
-    model = await OrderCRUD.get_by_game(order.order_id, order.game)
-
-    if model:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Order already exist")
-
-    model = await OrderCRUD.create(obj_in=order)
-    return model
+# @router.post('/', status_code=status.HTTP_200_OK)
+# async def create_order(order: OrderCreate):
+#     model = await OrderCRUD.get_by_order_id(order.order_id)
+#
+#     if model:
+#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Order already exist")
+#
+#     model = await OrderCRUD.create(obj_in=order)
+#     return model
 
 
 @router.delete('/{order_id}', response_model=OrderID)

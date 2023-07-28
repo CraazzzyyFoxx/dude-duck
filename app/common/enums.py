@@ -1,5 +1,7 @@
 from enum import StrEnum
 
+__all__ = ("RouteTag",)
+
 
 class RouteTag(StrEnum):
     """Tags used to classify API routes"""
@@ -13,4 +15,4 @@ class RouteTag(StrEnum):
     TELEGRAM = "⛔️ Telegram Methods"
     SHEET = "🧲 Gather data from Google Sheets"
     ORDER_RESPOND = "Order Booster Response"
-    
+    AUTH = "🤷🏿‍♀️‍ Auth"

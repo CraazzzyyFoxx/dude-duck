@@ -19,7 +19,7 @@ from app.schemas import OrderRespond, OrderRespondExtra, OrderID
 from app.services.pull import PullService
 from app.models import ORDER_CONFIRM_YES_CALLBACK
 from app.services.time import TimeService
-from app.common import format_error, OrderRender
+from app.common import format_err, OrderRender
 
 PRICE, START_DATE, ETA, DONE = range(4)
 
@@ -91,7 +91,7 @@ async def parse_order(update: Update, context: CallbackContext):
                 context.chat_data["eta"] = time - context.chat_data["start_date"]
 
         except ValueError as e:
-            await user.send_message(format_error(e.__str__()), parse_mode=ParseMode.HTML)
+            await user.send_message(format_err(e.__str__()), parse_mode=ParseMode.HTML)
         else:
             return True
 

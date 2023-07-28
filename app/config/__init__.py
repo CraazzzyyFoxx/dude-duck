@@ -1,44 +1,35 @@
 from pathlib import Path
 
-from pydantic.v1 import BaseSettings
+from pydantic_settings import SettingsConfigDict, BaseSettings
 
 
-class Config(BaseSettings):
-    token: str
-    webhook_url: str
+class AppConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix='app_', env_file=".env", env_file_encoding='utf-8')
+
+    bot_token: str
+    bot_webhook_url: str
+    bot_api_token: str
+
     host: str
     port: int
 
     admin_chat: int
 
     api_token: str
-    api_token_bot: str
     sentry_dsn: str
     debug: bool
+
+    secret: str
+    algorithm: str = 'HS256'
+    expires_s: int = 3600
 
     log_level: str = "info"
     logs_root_path: str = f"{Path.cwd()}/logs"
 
-    class Config:
-        env_file = ".env"
-        env_prefix = "bot_"
+
+app = AppConfig(_env_file='.env', _env_file_encoding='utf-8')
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-SQLITE_DB_FILE = BASE_DIR / "db"
-SQLITE_DB_FILE.mkdir(exist_ok=True)
-SQLITE_DB_FILE = BASE_DIR / "db" / "db.sqlite3"
+TEMPLATES_DIR = BASE_DIR / "app" / "templates"
 GOOGLE_CONFIG_FILE = BASE_DIR / "google.json"
-
-
-tortoise = {
-    "connections": {
-        "default": f"sqlite://{SQLITE_DB_FILE}", },
-
-    "apps": {
-        "main": {
-            "models": ["app.db", "aerich.models"],
-            "default_connection": "default",
-        }
-    },
-}

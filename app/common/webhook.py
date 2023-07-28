@@ -1,16 +1,15 @@
 import asyncio
+
 from abc import ABC, abstractmethod
-from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, Request, Response, HTTPException, status, Depends
-
-from aiogram import Bot, Dispatcher, loggers
+from fastapi import FastAPI, Request, Response,  Depends
+from aiogram import Bot, Dispatcher
 from aiogram.methods import TelegramMethod
-from aiogram.webhook.security import IPFilter
 from loguru import logger
 
 from app.common.enums import RouteTag
-from app.services.auth import AuthService
+from app.services.auth import requires_authorization_telegram
 
 
 def setup_application(app: FastAPI, dispatcher: Dispatcher, /, **kwargs: Any) -> None:
@@ -37,43 +36,6 @@ def setup_application(app: FastAPI, dispatcher: Dispatcher, /, **kwargs: Any) ->
 
     app.add_event_handler("startup", on_startup)
     app.add_event_handler("shutdown", on_shutdown)
-
-
-def check_ip(ip_filter: IPFilter, request: Request) -> Tuple[str, bool]:
-    # Try to resolve client IP over reverse proxy
-    if forwarded_for := request.headers.get("X-Forwarded-For", ""):
-        # Get the left-most ip when there is multiple ips
-        # (request got through multiple proxy/load balancers)
-        # https://github.com/aiogram/aiogram/issues/672
-        forwarded_for, *_ = forwarded_for.split(",", maxsplit=1)
-        return forwarded_for, forwarded_for in ip_filter
-
-    # When reverse proxy is not configured IP address can be resolved from incoming connection
-    if peer_name := request.client.host:
-        host, _ = peer_name
-        return host, host in ip_filter
-
-    # Potentially impossible case
-    return "", False  # pragma: no cover
-
-
-def ip_filter_middleware(
-    ip_filter: IPFilter,
-) -> Callable[[Request, Any], Awaitable[Any]]:
-    """
-
-    :param ip_filter:
-    :return:
-    """
-
-    async def _ip_filter_middleware(request: Request, handler) -> Any:
-        ip_address, accept = check_ip(ip_filter=ip_filter, request=request)
-        if not accept:
-            loggers.webhook.warning(f"Blocking request from an unauthorized IP: {ip_address}")
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-        return await handler(request)
-
-    return _ip_filter_middleware
 
 
 class BaseRequestHandler(ABC):
@@ -106,7 +68,7 @@ class BaseRequestHandler(ABC):
                           endpoint=self.handle,
                           methods=["POST"],
                           tags=[RouteTag.TELEGRAM],
-                          dependencies=[Depends(AuthService.requires_authorization_telegram)],
+                          dependencies=[Depends(requires_authorization_telegram)],
                           include_in_schema=False,
                           )
 
@@ -119,14 +81,6 @@ class BaseRequestHandler(ABC):
 
     @abstractmethod
     async def resolve_bot(self, request: Request) -> Bot:
-        """
-        This method should be implemented in subclasses of this class.
-
-        Resolve Bot instance from request.
-
-        :param request:
-        :return: Bot instance
-        """
         pass
 
     async def _background_feed_update(self, bot: Bot, update: Dict[str, Any]) -> None:
@@ -166,25 +120,14 @@ class BaseRequestHandler(ABC):
 
 
 class SimpleRequestHandler(BaseRequestHandler):
-    """
-    Handler for single Bot instance
-    """
 
     def __init__(
         self, dispatcher: Dispatcher, bot: Bot, handle_in_background: bool = True, **data: Any
     ) -> None:
-        """
-        :param dispatcher: instance of :class:`aiogram.dispatcher.dispatcher.Dispatcher`
-        :param handle_in_background: immediately respond to the Telegram instead of waiting end of handler process
-        :param bot: instance of :class:`aiogram.client.bot.Bot`
-        """
         super().__init__(dispatcher=dispatcher, handle_in_background=handle_in_background, **data)
         self.bot = bot
 
     async def close(self) -> None:
-        """
-        Close bot session
-        """
         await self.bot.session.close()
 
     async def resolve_bot(self, request: Request) -> Bot:

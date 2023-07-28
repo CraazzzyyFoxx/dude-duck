@@ -4,27 +4,26 @@ from fastapi import APIRouter, Depends, HTTPException
 from starlette import status
 
 from app.common.enums import RouteTag
-from app.schemas import OrderChannelUpdate, OrderChannelCreate, OrderChannelID
-from app.crud import OrderChannelCRUD
-from app.services.auth import AuthService
+from app.schemas import OrderChannelUpdate, OrderChannelCreate, OrderChannel
+from app.services.auth import current_active_superuser
 
 router = APIRouter(
     prefix='/order/channel',
     tags=[RouteTag.ORDER_CHANNELS],
-    dependencies=[Depends(AuthService.requires_authorization_admin)]
+    dependencies=[Depends(current_active_superuser)]
 )
 
 
-@router.get('/', response_model=list[OrderChannelID])
+@router.get('/', response_model=list[OrderChannel])
 async def reads_order_channel(skip: int = 0, limit: int = 100):
-    models = await OrderChannelCRUD.get_multi(skip=skip, limit=limit)
+    models = await OrderChannel.find({}).skip(skip).limit(limit).to_list()
 
     return models
 
 
-@router.get('/{item_id}', response_model=OrderChannelID)
+@router.get('/{item_id}', response_model=OrderChannel)
 async def read_order_channel(item_id: int):
-    model = await OrderChannelCRUD.get(item_id)
+    model = await OrderChannel.get(item_id)
 
     if not model:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -32,32 +31,30 @@ async def read_order_channel(item_id: int):
     return model
 
 
-@router.post('/', response_model=OrderChannelID)
-async def create_order_channel(order: OrderChannelCreate):
-    model = await OrderChannelCRUD.get_by_game_category(order.game, order.category)
-
-    if model:
+@router.post('/', response_model=OrderChannel)
+async def create_order_channel(channel: OrderChannelCreate):
+    if await OrderChannel.get_by_game_category(channel.game, channel.category):
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Item already exist")
 
-    model = await OrderChannelCRUD.create(obj_in=order)
-    return model
+    return await channel.create()
 
 
-@router.delete('/', response_model=OrderChannelID)
+@router.delete('/', response_model=OrderChannel)
 async def delete_order_channel(item_id: int):
-    model = await OrderChannelCRUD.get(item_id)
+    model = await OrderChannel.get(item_id)
 
     if not model:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    return await OrderChannelCRUD.remove(id=model.id)
+    return await model.delete()
 
 
-@router.put('/{item_id}', response_model=OrderChannelID)
+@router.put('/{item_id}', response_model=OrderChannel)
 async def update_order_channel(item_id: int, data: OrderChannelUpdate):
-    model = await OrderChannelCRUD.get(item_id)
+    model = await OrderChannel.get(item_id)
 
     if not model:
         raise HTTPException(status_code=404, detail="Item not found")
-
-    return await OrderChannelCRUD.update(db_obj=model, obj_in=data)
+    model.update_from(data)
+    await model.update()
+    return model

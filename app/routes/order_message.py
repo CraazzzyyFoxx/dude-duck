@@ -4,28 +4,25 @@ from fastapi import APIRouter, Depends, HTTPException
 from starlette import status
 
 from app.common.enums import RouteTag
-from app.schemas import OrderMessageUpdate, OrderMessageCreate, OrderMessageID, OrderID
-from app.crud import OrderCRUD, OrderMessageCRUD
-from app.services.auth import AuthService
+from app.schemas import OrderMessageUpdate, OrderMessageCreate, OrderMessage, Order
+from app.services.auth import current_active_superuser
 from app.services.pull import PullService
 
 router = APIRouter(
     prefix='/order/message',
     tags=[RouteTag.ORDER_MESSAGES],
-    dependencies=[Depends(AuthService.requires_authorization_admin)]
+    dependencies=[Depends(current_active_superuser)]
 )
 
 
-@router.get('/', response_model=list[OrderMessageID])
+@router.get('/', response_model=list[OrderMessage])
 async def reads_order_message(skip: int = 0, limit: int = 100):
-    models = await OrderMessageCRUD.get_multi(skip=skip, limit=limit)
-
-    return models
+    return await OrderMessage.find({}).skip(skip).limit(limit).to_list()
 
 
-@router.get('/{item_id}', response_model=OrderMessageID)
+@router.get('/{item_id}', response_model=OrderMessage)
 async def read_order_message(item_id: int):
-    model = await OrderMessageCRUD.get(item_id)
+    model = await OrderMessage.get(item_id)
 
     if not model:
         raise HTTPException(status_code=404, detail="Message not found")
@@ -33,14 +30,14 @@ async def read_order_message(item_id: int):
     return model
 
 
-@router.post('/', response_model=list[OrderMessageID])
+@router.post('/', response_model=list[OrderMessage])
 async def create_order_message(data: OrderMessageCreate):
-    order = await OrderCRUD.get_by_game(data.order_id, "DF")
+    order = await Order.get_by_order_id(data.order_id)
 
     if not order:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    messages = await PullService.pull_create(OrderID.model_validate(order, from_attributes=True), data)
+    messages = await PullService.pull_create(order, data)
 
     if not messages:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message already exist")
@@ -48,24 +45,24 @@ async def create_order_message(data: OrderMessageCreate):
     return messages
 
 
-@router.delete('/', response_model=OrderMessageID)
+@router.delete('/', response_model=OrderMessage)
 async def delete_order_message(item_id: int):
-    model = await OrderMessageCRUD.get(item_id)
+    model = await OrderMessage.get(item_id)
 
     if not model:
         raise HTTPException(status_code=404, detail="Message not found")
 
-    return await OrderMessageCRUD.remove(id=model.id)
+    return await OrderMessage.remove(id=model.id)
 
 
-@router.put('/{order_id}', response_model=list[OrderMessageID])
-async def update_order_message(order_id: int, data: OrderMessageUpdate):
-    model = await OrderCRUD.get_by_game(order_id, "DF")
+@router.put('/{order_id}', response_model=list[OrderMessage])
+async def update_order_message(order_id: str, data: OrderMessageUpdate):
+    model = await Order.get_by_order_id(order_id)
 
     if not model:
         raise HTTPException(status_code=404, detail="Message not found")
 
-    messages = await PullService.pull_edit(OrderID.model_validate(model, from_attributes=True), data)
+    messages = await PullService.pull_edit(model, data)
 
     if not messages:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message already exist")

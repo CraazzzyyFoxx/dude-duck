@@ -1,69 +1,60 @@
-from datetime import datetime
-
 from aiogram import types, exceptions
 from aiogram.types import InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardMarkup
+from beanie import PydanticObjectId
 from loguru import logger
 
-from app.common.formats import OrderRender
-from app.crud import OrderMessageCRUD, OrderChannelCRUD, OrderCRUD, OrderRespondCRUD, OrderRenderCRUD, BoosterCRUD
+from app import config
 from app.bot import bot
+from app.common import render_order, render_template, utcnow_day
 from app.bot.cbdata import OrderRespondCallback, OrderRespondConfirmCallback
-from app.db import OrderRespondModel
 from app.services.google import GoogleSheetsServiceManager
 from app.schemas import (
-    OrderID,
-    OrderMessageID,
+    Order,
+    OrderRespond,
     OrderRespondCreate,
-    OrderRespondID,
     OrderMessage,
     OrderMessageCreate,
     OrderMessageUpdate,
-    OrderRespondUpdate,
-    BoosterID,
     OrderSheetUpdate,
+    RenderConfig,
+    OrderChannel,
+    User
 )
-
-import config
 
 
 class PullService:
     @classmethod
-    async def pull_respond_check(cls, order_id: int, user_id: int) -> bool:
-        return bool(await OrderRespondCRUD.get_by_order_user_id(order_id=order_id, user_id=user_id))
+    async def pull_respond_check(cls, order_id: PydanticObjectId, user_id: PydanticObjectId) -> bool:
+        return bool(await OrderRespond.find_one(OrderRespond.id == order_id, OrderRespond.user_id == user_id))
 
     @classmethod
     async def pull_respond_check_total(cls, user_id: int):
         pass
 
     @classmethod
-    def get_reply_markup(cls, order_id: int) -> InlineKeyboardMarkup:
-        builder = InlineKeyboardBuilder()
-        builder.add(InlineKeyboardButton(text="15 min",
-                                         callback_data=OrderRespondCallback(order_id=order_id, time=15*60).pack()))
-        builder.add(InlineKeyboardButton(text="20 min",
-                                         callback_data=OrderRespondCallback(order_id=order_id, time=20*60).pack()))
-        builder.add(InlineKeyboardButton(text="60 min",
-                                         callback_data=OrderRespondCallback(order_id=order_id, time=60*60).pack()))
-        builder.add(InlineKeyboardButton(text="start now",
-                                         callback_data=OrderRespondCallback(order_id=order_id, time=0).pack()))
-        builder.adjust(3)
-        return builder.as_markup()
+    def get_reply_markup(cls, order_id: PydanticObjectId) -> InlineKeyboardMarkup:
+        blr = InlineKeyboardBuilder()
+        for i in range(1, 5):
+            blr.add(InlineKeyboardButton(text=f"{i * 15} min",
+                                         callback_data=OrderRespondCallback(order_id=order_id, time=i * 900).pack()))
+        blr.adjust(3)
+        return blr.as_markup()
 
     @classmethod
     async def create_message(
             cls,
-            order: OrderID,
+            order: Order,
             tg_channels: list[int],
             message_create: OrderMessageCreate,
             *,
             reply_markup: InlineKeyboardMarkup = None
-    ) -> list[OrderMessageID]:
+    ) -> list[OrderMessage]:
         resp = []
-        configs = await OrderRenderCRUD.get_by_names(message_create.config_names)
+        configs = await RenderConfig.get_by_names(message_create.config_names)
 
         for ch in tg_channels:
-            text = OrderRender().render(order=order, configs=configs).__str__()
+            text = render_order(order=order, configs=configs)
             msg = await bot.send_message(chat_id=ch, text=text, reply_markup=reply_markup)
             resp.append(msg)
 
@@ -72,13 +63,13 @@ class PullService:
     @classmethod
     async def edit_message(
             cls,
-            order: OrderID,
+            order: Order,
             message_update: OrderMessageUpdate,
             *,
             reply_markup: InlineKeyboardMarkup = None
     ) -> types.Message | None:
-        configs = await OrderRenderCRUD.get_by_names(message_update.config_names)
-        text = OrderRender().render(order=order, configs=configs).__str__()
+        configs = await RenderConfig.get_by_names(message_update.config_names)
+        text = render_order(order=order, configs=configs)
         try:
             message = await bot.edit_message_text(text,
                                                   chat_id=message_update.channel_id,
@@ -89,64 +80,60 @@ class PullService:
         return message
 
     @classmethod
-    async def get_pulls(cls, order: OrderID) -> list[OrderMessageID]:
-        messages = await OrderMessageCRUD.get_by_order_id(order.id)
-        return [OrderMessageID.model_validate(message, from_attributes=True) for message in messages]
+    async def get_pulls(cls, order: Order) -> list[OrderMessage]:
+        return await OrderMessage.get_by_order_id(order.id)
 
     @classmethod
-    async def pull_create(cls, order: OrderID, message_create: OrderMessageCreate):
+    async def pull_create(cls, order: Order, message_create: OrderMessageCreate):
         categories: str = order.info.get("tg_channels")
         channels_id = []
         resp = []
-        messages = await OrderMessageCRUD.get_by_order_id(order.id)
-        configs = await OrderRenderCRUD.get_by_names(message_create.config_names)
+        messages = await OrderMessage.get_by_order_id(order.id)
+        configs = await RenderConfig.get_by_names(message_create.config_names)
         sent = [msg.channel_id for msg in messages]
 
         if categories:
             categories: list[str] = categories.split('/')
             for category in categories:
-                m = await OrderChannelCRUD.get_by_game_category(order.game, category)
+                m = await OrderChannel.get_by_game_category(order.game, category)
                 if m:
                     channels_id.append(m.channel_id)
 
         if not channels_id:
-            channel = await OrderChannelCRUD.get_by_game_category(order.game, None)
+            channel = await OrderChannel.get_by_game_category(order.game, None)
             if not channel:
                 raise ValueError(f"No channels [game={order.game}]")
             channels_id.append(channel.channel_id)
 
         for ch in channels_id:
             if ch not in sent:
-                text = OrderRender().render(order=order, configs=configs).__str__()
+                text = render_order(order=order, configs=configs)
                 reply_markup = cls.get_reply_markup(order.id)
                 msg = await bot.send_message(chat_id=ch, text=text, reply_markup=reply_markup)
-                obj = OrderMessage(order_id=order.id, channel_id=ch, message_id=msg.message_id)
-                model = await OrderMessageCRUD.create(obj_in=obj)
-                resp.append(OrderMessageID.model_validate(model, from_attributes=True))
+                model = await OrderMessage(order_id=order, channel_id=ch, message_id=msg.message_id).create()
+                resp.append(model)
 
         return resp
 
     @classmethod
-    async def pull_edit(cls, order: OrderID, message_create: OrderMessageUpdate) -> list[OrderMessageID]:
-        messages = await OrderMessageCRUD.get_by_order_id(order.id)
-        configs = await OrderRenderCRUD.get_by_names(message_create.config_names)
+    async def pull_edit(cls, order: Order, message_create: OrderMessageUpdate) -> list[OrderMessage]:
+        messages = await OrderMessage.get_by_order_id(order.id)
+        configs = await RenderConfig.get_by_names(message_create.config_names)
         resp = []
-        for message in messages:
-            text = OrderRender().render(order=order, configs=configs).__str__()
+        for msg in messages:
+            text = render_order(order=order, configs=configs)
             reply_markup = cls.get_reply_markup(order.id)
             try:
-                await bot.edit_message_text(text,
-                                            chat_id=message.channel_id,
-                                            message_id=message.message_id,
+                await bot.edit_message_text(text, chat_id=msg.channel_id, message_id=msg.message_id,
                                             reply_markup=reply_markup)
-                resp.append(OrderMessageID.model_validate(message, from_attributes=True))
+                resp.append(msg)
             except exceptions.TelegramBadRequest:
                 pass
         return resp
 
     @classmethod
-    async def pull_delete(cls, order: OrderID) -> list[OrderMessageID]:
-        messages = await OrderMessageCRUD.get_by_order_id(order.id)
+    async def pull_delete(cls, order: Order) -> list[OrderMessage]:
+        messages = await OrderMessage.get_by_order_id(order.id)
         for message in messages:
             try:
                 await bot.delete_message(chat_id=message.channel_id, message_id=message.message_id)
@@ -154,87 +141,74 @@ class PullService:
                 pass
             await message.delete()
 
-        return [OrderMessageID.model_validate(message, from_attributes=True) for message in messages]
+        return [OrderMessage.model_validate(message, from_attributes=True) for message in messages]
 
     @classmethod
-    async def pull_delete_message(cls, message: OrderMessageID) -> OrderMessageID:
+    async def pull_delete_message(cls, message: OrderMessage) -> OrderMessage:
         try:
             await bot.delete_message(chat_id=message.channel_id, message_id=message.message_id)
         except exceptions.TelegramBadRequest:
             pass
-        await OrderMessageCRUD.remove(id=message.id)
+        await message.delete()
         return message
 
     @classmethod
-    async def pull_respond(cls, data: OrderRespondCreate, message_create: OrderMessageCreate) -> OrderRespondID:
+    async def pull_respond(cls, data: OrderRespondCreate, message_create: OrderMessageCreate) -> OrderRespond:
         msg = await cls.pull_create_admin(data, message_create)
         data.message_id_admin = msg.message_id
-        model = await OrderRespondCRUD.create(obj_in=data)
-        return OrderRespondID.model_validate(model, from_attributes=True)
+        resp = OrderRespond(**data.model_dump())
+        return await resp.create()
 
     @classmethod
     async def pull_create_admin(cls, data: OrderRespondCreate, message_create: OrderMessageCreate) -> Message:
-        order = OrderID.model_validate(await OrderCRUD.get(data.order_id), from_attributes=True)
-        configs = await OrderRenderCRUD.get_by_names(message_create.config_names)
-        message = OrderRender().render(order=order, respond=data, configs=configs).__str__()
-
+        order = await Order.get(data.order_id)
+        configs = await RenderConfig(message_create.config_names)
+        message = render_order(order=order, respond=data, configs=configs)
         cb = OrderRespondConfirmCallback(order_id=order.id, user_id=data.user_id)
-        builder = InlineKeyboardBuilder()
-        builder.add(InlineKeyboardButton(text="Принять", callback_data=cb.pack()))
-
+        builder = InlineKeyboardBuilder([[InlineKeyboardButton(text="Принять", callback_data=cb.pack())]])
         return await bot.send_message(config.app.admin_chat, text=message, reply_markup=builder.as_markup())
 
     @classmethod
-    async def pull_close(cls, order: OrderID, user_id: int) -> None:
-        responds = await OrderRespondCRUD.get_by_order_id(order_id=order.id)
-        messages = await OrderMessageCRUD.get_by_order_id(order_id=order.id)
-        names = OrderRenderCRUD.get_base_names(order)
+    async def pull_close(cls, order: Order, user_id: int) -> None:
+        responds = await OrderRespond.get_by_order_id(order_id=order.id)
+        messages = await OrderMessage.get_by_order_id(order_id=order.id)
+        names = RenderConfig.get_base_names(order)
         names.append("resp-admin")
-        configs = await OrderRenderCRUD.get_by_names(names)
+        configs = await RenderConfig.get_by_names(names)
         for resp in responds:
-            booster = await BoosterCRUD.get_by_user_id(resp.user_id)
+            booster = await User.get_by_user_id(resp.user_id)
             if resp.user_id == user_id:
-                resp = await OrderRespondCRUD.update(db_obj=resp, obj_in=OrderRespondUpdate(approved=True))
+                resp.approved = True
+                await resp.save()
                 await cls.pull_booster_resp_yes(order, booster, resp)
             else:
                 await cls.pull_booster_resp_no(order, booster)
             try:
-                resp_pyd = OrderRespondID.model_validate(resp, from_attributes=True)
-                msg = OrderRender().render(order=order, respond=resp_pyd, configs=configs)
-                await bot.edit_message_text(msg.__str__(), config.app.admin_chat, resp.message_id_admin)
+                msg = render_order(order=order, respond=resp, configs=configs)
+                await bot.edit_message_text(msg, config.app.admin_chat, resp.message_id_admin)
             except exceptions.TelegramBadRequest:
                 pass
         for message in messages:
-            await cls.pull_delete_message(OrderMessageID.model_validate(message, from_attributes=True))
+            await cls.pull_delete_message(message)
 
     @classmethod
-    async def pull_booster_resp_yes(cls, order: OrderID, booster: BoosterID, resp: OrderRespondModel):
-        model = await OrderCRUD.get(order.id)
-        await OrderCRUD.update(db_obj=model, obj_in=order)
-        now = datetime.utcnow()
-        now = datetime(year=now.year, month=now.month, day=now.day)
-        data = OrderSheetUpdate(booster=booster.name, auth_date=now)
-        x = await GoogleSheetsServiceManager.get().update_order("M+", 0, order.order_id, data)
-        await OrderCRUD.update(db_obj=model, obj_in=x)
+    async def pull_booster_resp_yes(cls, order: Order, booster: User, resp: OrderRespond):
+        data = OrderSheetUpdate(booster=booster.name, auth_date=utcnow_day())
+        x = await GoogleSheetsServiceManager.get().update_order(order.spreadsheet,
+                                                                order.sheet_id, order.order_id, data)
+        order.update_from(x)
+        await order.save()
 
-        msg = ["Hello!\n",
-               f"You have been applied for Order #{order.order_id} and",
-               f"selected start time in {resp.extra.eta.seconds / 60} min.",
-               "Here is full order information.\n"
-               ]
-        names = ['base', f"{x.game}-cd", 'eta-price']
-        configs = await OrderRenderCRUD.get_by_names(names)
-        message = OrderRender().render(order=x, configs=configs)
-        msg.append(message.__str__())
-        msg.append(f"\nHere is your Discord conference invite, please join and start the order")
+        configs = await RenderConfig.get_by_names(['base', f"{x.game}-cd", 'eta-price'])
+        data = {"order": order, "resp": resp, "rendered_order": render_order(order=x, configs=configs)}
         try:
-            await bot.send_message(booster.user_id, '\n'.join(msg))
+            await bot.send_message(resp.user_id, render_template("order_response_approve.j2", data))
         except exceptions.TelegramBadRequest:
             pass
 
     @classmethod
-    async def pull_booster_resp_no(cls, order: OrderID, booster: BoosterID):
+    async def pull_booster_resp_no(cls, order: Order, booster: User):
         try:
-            await bot.send_message(booster.user_id, f"Sorry, order #{order.order_id} was taken by another player")
+            await bot.send_message(booster.user_id, render_template("order_response_decline.j2", {"order": order}))
         except exceptions.TelegramBadRequest:
             pass

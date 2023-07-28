@@ -2,10 +2,9 @@ from aiogram import Router, types, exceptions
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from app.schemas import OrderID
-from app.crud import OrderCRUD, OrderRenderCRUD, BoosterCRUD
+from app.schemas import OrderDB
 from app.services.pull import PullService
-from app.common.formats import format_error, OrderRender
+from app.common.formats import format_err, render_order
 from app.bot.cbdata import OrderRespondCallback, OrderRespondYesNoCallback
 from app.bot import bot
 
@@ -14,12 +13,11 @@ router = Router()
 
 @router.callback_query(OrderRespondCallback.filter())
 async def entry_point(call: types.CallbackQuery, callback_data: OrderRespondCallback):
-    call._bot = bot
     booster = await BoosterCRUD.get_by_user_id(call.from_user.id)
     if not booster or not booster.verified:
         try:
             await bot.send_message(call.from_user.id,
-                                   format_error("You can't pick orders because there is no verification or registration."))
+                                   format_err("You can't pick orders because there is no verification or registration."))
         except exceptions.TelegramAPIError:
             me = await bot.get_me()
             await call.answer(url=f"https://t.me/{me.username}?start=Hello")
@@ -31,7 +29,7 @@ async def entry_point(call: types.CallbackQuery, callback_data: OrderRespondCall
     if await PullService.pull_respond_check(order.id, call.from_user.id):
         try:
             await bot.send_message(call.from_user.id,
-                                   format_error("You have already responded to this order"))
+                                   format_err("You have already responded to this order"))
         except exceptions.TelegramAPIError:
             me = await bot.get_me()
             await call.answer(url=f"https://t.me/{me.username}?start=Hello")
@@ -49,7 +47,7 @@ async def entry_point(call: types.CallbackQuery, callback_data: OrderRespondCall
 
     try:
         await bot.send_message(call.from_user.id,
-                               OrderRender().render(order=order, configs=configs).__str__(),
+                               render_order(order=order, configs=configs),
                                reply_markup=builder.as_markup())
     except exceptions.TelegramAPIError:
         me = await bot.get_me()

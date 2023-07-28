@@ -2,18 +2,19 @@ import datetime
 import typing
 
 from pydantic import BaseModel, ConfigDict, AnyHttpUrl, field_validator, Field
+from beanie import Document, Indexed
 
 __all__ = (
     "OrderSheetUpdate",
     "OrderSheetParseItem",
     "OrderSheetParse",
-    "OrderSheetParseItemList",
-    "OrderSheetParseID",
     "OrderSheetParseBase",
     "OrderSheetParseCreate",
     "OrderSheetParseUpdate",
     "allowed_types"
 )
+
+from app.schemas.base import UpdateInterface
 
 allowed_types = ["int", "str", "timedelta", "datetime", "SecretStr", "EmailStr", "HttpUrl", "float", 'PhoneNumber',
                  'PaymentCardNumber']
@@ -42,32 +43,29 @@ class OrderSheetParseItem(BaseModel):
         return v
 
 
-class OrderSheetParseItemList(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    items: list[OrderSheetParseItem]
-
-
 class OrderSheetParseBase(BaseModel):
     spreadsheet: str | None
     sheet_id: int | None
-    extra: OrderSheetParseItemList
+    prefix: str | None = Field(default=None, min_length=1)
+    start: int = Field(default=2, gt=1)
+    items: list[OrderSheetParseItem]
 
 
-class OrderSheetParse(OrderSheetParseBase):
-    spreadsheet: str
+class OrderSheetParse(Document, OrderSheetParseBase, UpdateInterface):
+    spreadsheet: Indexed(str)
     sheet_id: int
-    extra: OrderSheetParseItemList
+    prefix: str | None = Field(default=None, min_length=1)
+    start: int = Field(default=2, gt=1)
+    items: list[OrderSheetParseItem]
+
+    @classmethod
+    async def get_spreadsheet_sheet(cls, spreadsheet: str, sheet_id: int) -> "OrderSheetParse":
+        return await cls.find_one(cls.spreadsheet == spreadsheet, cls.sheet_id == sheet_id)
 
 
 class OrderSheetParseUpdate(OrderSheetParseBase):
-    pass
-
-
-class OrderSheetParseID(OrderSheetParse):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
+    spreadsheet: str
+    sheet_id: int
 
 
 class OrderSheetParseCreate(OrderSheetParse):

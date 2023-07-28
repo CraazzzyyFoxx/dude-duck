@@ -10,11 +10,9 @@ python = "^3.11"
 uvicorn = "^0.23.0"
 pydantic = {extras = ["email"], version = "^2.0.3"}
 python-dotenv = "^1.0.0"
-tortoise-orm = "^0.19.3"
 dateparser = "^1.1.7"
 loguru = "^0.7.0"
 sentry-sdk = {extras = ["fastapi"], version = "^1.28.1"}
-aerich = "^0.7.1"
 fastapi = "^0.100.0"
 uvloop = {version = "^0.17.0", platform="linux"}
 gspread-asyncio = "^1.9.0"
@@ -22,6 +20,10 @@ google-api-python-client = "^2.94.0"
 pydantic-extra-types = "^2.0.0"
 phonenumbers = "^8.13.17"
 aiogram = {version = "^3.0.0b8", allow-prereleases = true}
+jinja2 = "^3.1.2"
+beanie = "^1.20.0"
+fastapi-users = {extras = ["beanie"], version = "^12.1.0"}
+pydantic-settings = "^2.0.2"
 
 
 

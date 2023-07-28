@@ -8,13 +8,13 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message
 from loguru import logger
 
-import config
+from app import config
 from app.bot import bot
 from app.bot.cbdata import OrderRespondYesNoCallback
 from app.crud import OrderCRUD, OrderRenderCRUD
 from app.schemas import OrderRespondExtra, OrderRespondCreate, OrderID, OrderMessageCreate
 from app.services.pull import PullService
-from app.common.formats import OrderRender
+from app.common.formats import render_order
 
 
 router = Router()
@@ -25,13 +25,11 @@ class OrderRespond(StatesGroup):
 
 
 @router.callback_query(OrderRespondYesNoCallback.filter(F.state == True))
-async def respond_order_yes_button(call: types.CallbackQuery, state: FSMContext,
-                                   callback_data: OrderRespondYesNoCallback):
-    call._bot = bot
+async def respond_order_yes_button(call: types.CallbackQuery, state: FSMContext, callback_data: OrderRespondYesNoCallback):
 
     order = OrderID.model_validate(await OrderCRUD.get(callback_data.order_id), from_attributes=True)
     configs = await OrderRenderCRUD.get_by_names(OrderRenderCRUD.get_base_names(order))
-    text = OrderRender().render(order=order, configs=configs).__str__()
+    text = render_order(order=order, configs=configs)
     await bot.edit_message_text(text, call.from_user.id, call.message.message_id, reply_markup=None)
     await bot.send_message(call.from_user.id,
                            "Enter the price, how long you will start in, and how long it will take to complete")
@@ -41,15 +39,12 @@ async def respond_order_yes_button(call: types.CallbackQuery, state: FSMContext,
 
 @router.callback_query(OrderRespondYesNoCallback.filter(F.state is False))
 async def respond_order_no_button_message(call: types.CallbackQuery, callback_data: OrderRespondYesNoCallback):
-    call._bot = bot
     await call.answer()
     await bot.delete_message(call.message.chat.id, call.message.message_id)
 
 
 @router.message(OrderRespond.approved, F.text)
 async def respond_done_order(message: Message, state: FSMContext):
-    message._bot = bot
-
     data = await state.get_data()
     order = cast(OrderID, data.get("order"))
     msg: Message = data.get("message")
@@ -67,7 +62,7 @@ async def respond_done_order(message: Message, state: FSMContext):
     )
 
     configs = await OrderRenderCRUD.get_by_names(OrderRenderCRUD.get_base_respond_names(order))
-    text = OrderRender().render(order=order, respond=data, configs=configs).__str__()
+    text = render_order(order=order, respond=data, configs=configs)
     try:
         await bot.edit_message_text(text, message.from_user.id, msg.message_id)
     except exceptions.TelegramBadRequest:

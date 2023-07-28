@@ -1,19 +1,20 @@
 import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from beanie import Indexed
+from pydantic import Field, BaseModel
 
+from .base import SheetEntity, SheetEntityDB, UpdateInterface
 
 __all__ = (
     "Order",
-    "OrderID",
     "OrderBase",
     "OrderCreate",
     "OrderUpdate",
 )
 
 
-class OrderBase(BaseModel):
-    order_id: int | None = None
+class OrderMeta(BaseModel):
+    order_id: str | None = None
     date: datetime.datetime | None = None
     exchange: float | None = None
     shop: str | None = None
@@ -31,7 +32,7 @@ class OrderBase(BaseModel):
     booster: str | int | None = None
     auth_date: datetime.datetime | None = None
     status: str | None = None
-    screenshot: HttpUrl | None = None
+    screenshot: str | None = None
     end_date: datetime.datetime | None = None
 
     price_dollar: float | None = None
@@ -46,49 +47,54 @@ class OrderBase(BaseModel):
     info: dict = Field(default={})
 
 
-class Order(OrderBase):
-    order_id: int
+class OrderBase(OrderMeta):
+    order_id: str
     date: datetime.datetime
     exchange: float
     shop: str
     shop_order_id: str | int | None = None
     boost_type: str
-    region_fraction: str
-    server: str | None = None
     character_class: str | None = None
     nickname: str | None = None
+    platform: str | None = None
     game: str
+    category: str
     purchase: str
     comment: str | None = None
-    battle_tag: str | None = None
-    contact: str | None = None
+    contact: str
     booster: str | int | None = None
     auth_date: datetime.datetime | None = None
     status: str
-    screenshot: HttpUrl | None = None
+    screenshot: str | None = None
     end_date: datetime.datetime | None = None
 
     price_dollar: float
     price_booster_dollar: float
     price_booster_dollar_fee: float
     price_booster_rub: float
-    price_booster_gold: float
-    method_payment: str | None = None
     profit: float
-    share: float
+    percent: float
+    status_paid: str
 
     info: dict = Field(default={})
 
 
-class OrderCreate(Order):
+class Order(SheetEntityDB, OrderBase, UpdateInterface):
+    _type = OrderBase
+    order_id: Indexed(str, unique=True)
+    created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+
+    class Settings:
+        name = "orders"
+
+    @classmethod
+    async def get_by_order_id(cls, order_id: str) -> "Order":
+        return await cls.find_one(cls.order_id == order_id)
+
+
+class OrderCreate(Order, SheetEntity):
     pass
 
 
-class OrderUpdate(OrderBase):
+class OrderUpdate(OrderBase, SheetEntity):
     pass
-
-
-class OrderID(Order):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int

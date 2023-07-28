@@ -1,4 +1,3 @@
-import json
 import typing
 import datetime
 
@@ -7,29 +6,29 @@ from fastapi.encoders import jsonable_encoder
 from gspread_asyncio import AsyncioGspreadClientManager
 from google.oauth2.service_account import Credentials
 from gspread.utils import ValueRenderOption, DateTimeOption
-from pydantic import create_model, SecretStr, EmailStr, field_validator, BaseModel, HttpUrl
+from pydantic import create_model, SecretStr, EmailStr, field_validator, BaseModel, HttpUrl, ValidationError
 from pydantic_extra_types.payment import PaymentCardNumber
 from pydantic_extra_types.phone_numbers import PhoneNumber
 
-from app.schemas import OrderSheetUpdate, Order, Booster, AdminID
-from app.crud import OrderSheetsCRUD, AdminCRUD
+from app import config
+from app.schemas import OrderSheetUpdate, Order, Booster, SheetEntity, OrderSheetParse, User, AdminGoogleToken
 from app.services.time import TimeService, ConversionMode
-
-import config
 
 __all__ = ("GoogleSheetsService", "GoogleSheetsServiceManager")
 
 BM = typing.TypeVar("BM", bound=BaseModel)
-type_map = {"int": int,
-            'str': str,
-            'float': float,
-            'timedelta': datetime.timedelta,
-            'datetime': datetime.datetime,
-            'SecretStr': SecretStr,
-            'EmailStr': EmailStr,
-            'HttpUrl': HttpUrl,
-            'PhoneNumber': PhoneNumber,
-            'PaymentCardNumber': PaymentCardNumber}
+type_map = {
+    "int": int,
+    'str': str,
+    'float': float,
+    'timedelta': datetime.timedelta,
+    'datetime': datetime.datetime,
+    'SecretStr': SecretStr,
+    'EmailStr': EmailStr,
+    'HttpUrl': HttpUrl,
+    'PhoneNumber': PhoneNumber,
+    'PaymentCardNumber': PaymentCardNumber
+}
 
 
 def enum_parse(field, extra):
@@ -53,34 +52,34 @@ def parse_timedelta(v: str) -> typing.Any:
 
 class GoogleSheetsServiceManagerMeta:
     def __init__(self):
-        self.managers: dict[int, GoogleSheetsService] = {}
+        self.managers: dict[str, GoogleSheetsService] = {}
         with open(config.GOOGLE_CONFIG_FILE) as file:
-            self.creds = json.loads(file.read())
+            self.creds = AdminGoogleToken.model_validate_json(file.read())
 
     async def init(self):
-        self.managers[0] = GoogleSheetsService(AsyncioGspreadClientManager(self.get_creds()))
+        self.managers["0"] = GoogleSheetsService(AsyncioGspreadClientManager(self.get_creds()))
 
-        admins = await AdminCRUD.get_multi()
+        admins = await User.find(User.is_superuser == True).to_list()
         for admin in admins:
-            admin = AdminID.model_validate(admin, from_attributes=True)
-            self.managers[admin.google.client_id] = GoogleSheetsService(AsyncioGspreadClientManager
-                                                                        (self.get_creds(admin=admin)))
+            if admin.google:
+                self.managers[admin.google.client_id] = GoogleSheetsService(AsyncioGspreadClientManager
+                                                                            (self.get_creds(admin=admin)))
         logger.info("GoogleSheetsServiceManager... Ready!")
 
-    async def admin_create(self, admin: AdminID):
-        admin = AdminID.model_validate(admin, from_attributes=True)
-        self.managers[admin.google.client_id] = GoogleSheetsService(
-            AsyncioGspreadClientManager(self.get_creds(admin=admin)))
+    # async def admin_create(self, admin: AdminID):
+    #     admin = AdminID.model_validate(admin, from_attributes=True)
+    #     self.managers[admin.google.client_id] = GoogleSheetsService(
+    #         AsyncioGspreadClientManager(self.get_creds(admin=admin)))
+    #
+    # async def admin_delete(self, admin: AdminID):
+    #     del self.managers[admin.google.client_id]
+    #
+    # async def admin_update(self, admin: AdminID):
+    #     admin = AdminID.model_validate(admin, from_attributes=True)
+    #     self.managers[admin.google.client_id] = GoogleSheetsService(
+    #         AsyncioGspreadClientManager(self.get_creds(admin=admin)))
 
-    async def admin_delete(self, admin: AdminID):
-        del self.managers[admin.google.client_id]
-
-    async def admin_update(self, admin: AdminID):
-        admin = AdminID.model_validate(admin, from_attributes=True)
-        self.managers[admin.google.client_id] = GoogleSheetsService(
-            AsyncioGspreadClientManager(self.get_creds(admin=admin)))
-
-    def get_creds(self, *, admin: AdminID = None):
+    def get_creds(self, *, admin=None):
         def wrapped():
             if admin:
                 data = admin.google.model_dump()
@@ -96,11 +95,11 @@ class GoogleSheetsServiceManagerMeta:
 
         return wrapped
 
-    def get(self, *, admin: AdminID = None):
-        if admin:
-            return self.managers[admin.google.client_id]
+    def get(self, *, user: User = None):
+        if user:
+            return self.managers[user.google.client_id]
         else:
-            return self.managers[0]
+            return self.managers["0"]
 
 
 class GoogleSheetsService:
@@ -121,28 +120,43 @@ class GoogleSheetsService:
             return type_map[type_name] | None
         return type_map[type_name]
 
+    def get_range(self, parser: OrderSheetParse, *, row_id: int = None, end_id: int = 0):
+        columns = 0
+        start = 100000000000
+        for p in parser.items:
+            row_p = p.row
+            if row_p > columns:
+                columns = row_p
+            if row_p < start:
+                start = row_p
+        if row_id:
+            return f"{self.n2a(start)}{row_id}:{self.n2a(columns)}{row_id}"
+        return f"{self.n2a(start)}{parser.start}:{self.n2a(columns)}{end_id}"
+
     @staticmethod
     async def get_parser(spreadsheet: str, sheet_id: int):
-        if parser := await OrderSheetsCRUD.get_by_spreadsheet(spreadsheet, sheet_id):
+        if parser := await OrderSheetParse.find_one(OrderSheetParse.spreadsheet == spreadsheet,
+                                                    OrderSheetParse.sheet_id == sheet_id):
             return parser
         raise ValueError(f"No data for parser [spreadsheet={spreadsheet} sheet_id={sheet_id}]")
 
     async def parse_row(
             self,
-            model: typing.Type[BaseModel],
+            model: typing.Type[SheetEntity],
             spreadsheet: str,
             sheet_id: int,
+            row_id: int,
             row: list[typing.Any],
             apply_model: bool
     ) -> BM:
         parser = await self.get_parser(spreadsheet, sheet_id)
-        for i in range(len(parser.extra.items) - len(row)):
+        for i in range(len(parser.items) - len(row)):
             row.append(None)
 
         _fields = {}
         _validators = {}
         data_for_valid = {}
-        for getter in parser.extra.items:
+        for getter in parser.items:
             value = row[getter.row]
             if value in ["", " "]:
                 value = None
@@ -164,17 +178,21 @@ class GoogleSheetsService:
         if apply_model:
             validated_data = valid_model.model_dump()
             model_fields = [field[0] for field in model.model_fields.items()]
-            data = dict(info={})
-
-            for getter in parser.extra.items:
+            data = {}
+            info = {}
+            for getter in parser.items:
                 if getter.name in model_fields:
                     data[getter.name] = validated_data[getter.name]
                 else:
-                    data["info"][getter.name] = validated_data[getter.name]
+                    info[getter.name] = validated_data[getter.name]
+
+            data["spreadsheet"] = spreadsheet
+            data["sheet_id"] = sheet_id
+            data["row_id"] = row_id
+            data["info"] = info
 
             return model(**data)
-        else:
-            return valid_model
+        return valid_model
 
     async def data_to_row(
             self,
@@ -197,27 +215,24 @@ class GoogleSheetsService:
 
     async def get_row_data(
             self,
-            model: typing.Type[BaseModel],
+            model: typing.Type[SheetEntity],
             spreadsheet: str,
             sheet_id: int,
             row_id: int,
             apply_model: bool
-    ):
+    ) -> BM:
         agc = await self.manager.authorize()
         sh = await agc.open(spreadsheet)
         sheet = await sh.get_worksheet_by_id(sheet_id)
         parser = await self.get_parser(spreadsheet, sheet_id)
-        columns = max(p.row for p in parser.extra.items)
-        start = min(p.row for p in parser.extra.items)
-
-        row = await sheet.get(range_name=f"{self.n2a(start)}{row_id}:{self.n2a(columns)}{row_id}",
+        row = await sheet.get(range_name=self.get_range(parser, row_id=row_id),
                               value_render_option=ValueRenderOption.unformatted,
                               date_time_render_option=DateTimeOption.formatted_string)
-        return await self.parse_row(model, spreadsheet, sheet_id, row[0], apply_model)
+        return await self.parse_row(model, spreadsheet, sheet_id, row_id, row[0], apply_model)
 
     async def get_all_data(
             self,
-            model: typing.Type[BaseModel],
+            model: typing.Type[SheetEntity],
             spreadsheet: str,
             sheet_id: int,
             apply_model: bool
@@ -225,25 +240,27 @@ class GoogleSheetsService:
         agc = await self.manager.authorize()
         sh = await agc.open(spreadsheet)
         sheet = await sh.get_worksheet_by_id(sheet_id)
-        values_list = await sheet.col_values(2, value_render_option=ValueRenderOption.unformatted)
         parser = await self.get_parser(spreadsheet, sheet_id)
-        columns = max(p.row for p in parser.extra.items)
-        start = min(p.row for p in parser.extra.items)
-        index = 1
-
-        for value in values_list:
-            if not value:
+        values_list = await sheet.col_values(2, value_render_option=ValueRenderOption.unformatted)
+        index = 0
+        for i in range(parser.start, len(values_list)):
+            if not values_list[i]:
                 break
-            index += 1
-
-        rows = await sheet.get(range_name=f"{self.n2a(start)}1:{self.n2a(columns)}{index}",
+            index = i
+        rows = await sheet.get(range_name=self.get_range(parser, end_id=index),
                                value_render_option=ValueRenderOption.unformatted,
                                date_time_render_option=DateTimeOption.formatted_string)
-        return [await self.parse_row(model, spreadsheet, sheet_id, row, apply_model) for row in rows]
+        resp = []
+        for row_id, row in enumerate(rows, parser.start):
+            try:
+                resp.append(await self.parse_row(model, spreadsheet, sheet_id, row_id, row, apply_model))
+            except ValidationError:
+                pass
+        return resp
 
     async def create_row_data(
             self,
-            model: typing.Type[BaseModel],
+            model: typing.Type[SheetEntity],
             spreadsheet: str,
             sheet_id: int,
             data: BaseModel,
@@ -264,7 +281,7 @@ class GoogleSheetsService:
 
     async def update_row_data(
             self,
-            model: typing.Type[BaseModel],
+            model: typing.Type[SheetEntity],
             spreadsheet: str,
             sheet_id: int,
             row_id: int,
@@ -317,9 +334,9 @@ class GoogleSheetsService:
         agc = await self.manager.authorize()
         sh = await agc.open(spreadsheet)
         sheet = await sh.get_worksheet_by_id(sheet_id)
-        cell_list = await sheet.findall(value)
+        cell_list = await sheet.find(value)
         if cell_list:
-            return await self.get_row_data(Booster, spreadsheet, sheet_id, cell_list[0].row, apply_model=apply_model)
+            return await self.get_row_data(Booster, spreadsheet, sheet_id, cell_list.row, apply_model=apply_model)
 
     async def get_boosters(self, spreadsheet: str, sheet_id: int, *, apply_model=True) -> list[Booster]:
         return await self.get_all_data(Booster, spreadsheet, sheet_id, apply_model=apply_model)

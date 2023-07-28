@@ -4,8 +4,8 @@ from aiogram import types, Router, Bot
 from aiogram.filters import Command, CommandObject
 from pydantic import BaseModel, HttpUrl, field_validator, ValidationError, Field
 
-import config
-from app.common.formats import format_error, format_pydantic_error
+from app import config
+from app.common import format_err, format_pydantic_err, render_template
 from app.services.google import GoogleSheetsServiceManager
 from app.crud import BoosterCRUD, OrderCRUD
 from app.schemas import OrderBase
@@ -29,47 +29,32 @@ class Validation(BaseModel):
 
 @router.message(Command('close'))
 async def start(message: types.Message, command: CommandObject, bot: Bot):
-    message._bot = bot
-
-    user = message.from_user
-    booster = await BoosterCRUD.get_by_username(user.username)
+    booster = await BoosterCRUD.get_by_username(message.from_user.username)
     if not booster or not booster.verified:
-        return await message.answer(
-            format_error("You can't close orders because there is no verification or registration."))
-
+        return await message.answer(format_err(render_template("no_verify.j2")))
     if not command.args:
-        return await message.answer(format_error("The information should be of the type: \n"
-                                                 "<b>300 - https://imgur.com/LTj5W8x - $</b>"),
-                                    disable_web_page_preview=True)
-
+        return await message.answer(format_err(render_template("error_close_order.j2")), disable_web_page_preview=True)
     args = command.args.split("-")
-
     if len(args) != 3:
-        return await message.answer(format_error("The information should be of the type: \n"
-                                                 "<b>300 - https://imgur.com/LTj5W8x - $</b>"),
-                                    disable_web_page_preview=True)
+        return await message.answer(format_err(render_template("error_close_order.j2")), disable_web_page_preview=True)
     try:
-        data = Validation(order_id=args[0].strip(),
-                          url=args[1].strip(),
-                          payment=args[2].strip())
+        data = Validation(order_id=args[0].strip(), url=args[1].strip(), payment=args[2].strip())
     except ValidationError as e:
-        return await message.answer(format_error(format_pydantic_error(e)))
+        return await message.answer(format_err(format_pydantic_err(e)))
 
-    model = await OrderCRUD.get_by_game(data.order_id, "DF")
+    model = await OrderCRUD.get_by_order_id(data.order_id)
 
     if not model:
-        return await message.answer(format_error("Order not found"))
+        return await message.answer(format_err("Order not found"))
     if model.booster != booster.name:
-        return await message.answer(format_error("You can only close your orders"))
+        return await message.answer(format_err("You can close only your orders"))
     if model.status == "Completed":
-        return await message.answer(format_error("The order is already closed"))
+        return await message.answer(format_err("The order is already closed"))
     now = datetime.utcnow()
     now = datetime(year=now.year, month=now.month, day=now.day)
-    await message.answer("Processing... Please wait")
+    msg = await message.answer("Processing... Please wait")
     d = OrderBase(screenshot=data.url, method_payment=data.payment, status="Completed", end_date=now)
     await GoogleSheetsServiceManager.get().update_order("M+", 0, data.order_id, d)
     await OrderCRUD.update(db_obj=model, obj_in=d)
-
-    await bot.send_message(config.app.admin_chat, f"@dudeduck @thespacerat Order#{model.order_id}  was closed! please check screenshot")
-
-    return await message.answer("Order successfully closed")
+    await bot.send_message(config.app.admin_chat, render_template("close_order_admin.j2", {"order": model}))
+    return await msg.edit_text('\n'.join([msg.text, "Order successfully closed"]))

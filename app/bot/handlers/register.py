@@ -1,46 +1,41 @@
-from aiogram import types, Router, Bot
+from aiogram import types, Router
 from aiogram.filters import Command
 from loguru import logger
 from pydantic import ValidationError
 
-from app.common.formats import format_error, format_pydantic_error
 from app.services.google import GoogleSheetsServiceManager
-from app.crud import BoosterCRUD
-from app.schemas import BoosterCreate
+from app.schemas import User
+from app.common import format_err, format_pydantic_err, render_template
 
 router = Router()
 
 
 @router.message(Command('register'))
-async def start(message: types.Message, bot: Bot):
-    message._bot = bot
+async def register(message: types.Message):
     user = message.from_user
-    booster = await BoosterCRUD.get_by_username(user.username)
+    booster = await User.get_by_user_id(user.id)
     if booster:
         return await message.answer("You have already applied for registration")
 
-    await message.answer("Fetching data... Please wait")
+    msg = await message.answer("Fetching data... Please wait")
     try:
-        booster_sheets = await GoogleSheetsServiceManager.get().get_booster_by_cell(spreadsheet="M+",
-                                                                                    sheet_id=673034649,
-                                                                                    value=user.username)
+        mn = GoogleSheetsServiceManager.get()
+        booster_sh = await mn.get_booster_by_cell(spreadsheet="Copy of B2B order", sheet_id=6585526817, value=user.username)
     except ValidationError as e:
-        return await message.answer(format_error(format_pydantic_error(e)))
-
-    if booster_sheets is None:
-        await message.answer("The reason for the error is lack of verification. "
-                             "Please send your Telegram tag and payment method to the manager at @Dudeduck or @thespacerat")
-        return
+        return await message.answer(format_err(format_pydantic_err(e)))
+    if booster_sh is None:
+        return await message.answer(render_template("error_register.j2"))
 
     data = BoosterCreate(user_id=user.id,
                          username=user.username,
-                         name=booster_sheets.name,
-                         description=booster_sheets.description,
-                         rub=booster_sheets.rub,
-                         binance=booster_sheets.binance,
-                         gold=booster_sheets.gold,
-                         discord=booster_sheets.discord
+                         name=booster_sh.name,
+                         description=booster_sh.description,
+                         rub=booster_sh.rub,
+                         binance=booster_sh.binance,
+                         gold=booster_sh.gold,
+                         discord=booster_sh.discord
                          )
 
     await BoosterCRUD.create(obj_in=data)
-    await message.answer("Registration was successful and you can now take orders ")
+    await msg.edit_text("\n".join([msg.text, render_template("register.j2")]))
+    logger.info(f"Booster [username={user.username} id={user.id}] completed registration]")

@@ -5,12 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.common.enums import RouteTag
 from app.schemas import OrderRespondID
 from app.crud import OrderRespondCRUD
-from app.services.auth import AuthService
+from app.services.auth import current_active_superuser
 
 router = APIRouter(
     prefix='/order/respond',
     tags=[RouteTag.ORDER_RESPOND],
-    dependencies=[Depends(AuthService.requires_authorization_admin)]
+    dependencies=[Depends(current_active_superuser)]
 )
 
 
